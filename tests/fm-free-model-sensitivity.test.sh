@@ -582,4 +582,165 @@ assert_contains "$(cat "$MECH_ERR")" "src/auth/session.ts" "the refusal did not 
 [ -f "$MECH_REPO/src/auth/session.ts" ] || fail "mech removed the caller's protected file"
 pass "mech refuses a result that changes a protected path inside a declared directory"
 
+# The macOS confine is a sandbox-exec profile. This host is Linux, so sandbox-exec
+# itself never runs here: the cases below check which confine each platform
+# selects, what the profile says, that its path rules agree with the Linux read
+# block, and that a missing or failing sandbox refuses instead of running the
+# model. They do not show the profile applies on macOS.
+DARWIN="$TMP_ROOT/darwin"
+mkdir -p "$DARWIN"
+cat > "$DARWIN/sandbox-exec" <<'SH'
+#!/bin/sh
+# Stand-in for /usr/bin/sandbox-exec: records each call, then runs the command
+# without any sandbox. It exists only to observe selection and scrubbing.
+echo called >> "$STUB_LOG"
+[ "$1" = -p ] || exit 64
+shift 2
+exec "$@"
+SH
+cat > "$DARWIN/sandbox-exec-fails" <<'SH'
+#!/bin/sh
+echo "sandbox-exec: sandbox_apply: Operation not permitted" >&2
+exit 71
+SH
+chmod +x "$DARWIN/sandbox-exec" "$DARWIN/sandbox-exec-fails"
+# shellcheck disable=SC2016 # the child shell, not this one, expands $1
+TOUCH_RAN='touch "$1"'
+# shellcheck disable=SC2016 # the child shell, not this one, expands these
+SHOW_ENV='echo "doppler=${DOPPLER_TOKEN:-unset} gh=${GH_TOKEN:-unset} region=${AWS_REGION:-unset}"; exit 5'
+
+darwin_confine() {  # <system> <sandbox-exec> -- <command...>
+  local system=$1 sandbox=$2
+  shift 3
+  : > "$DARWIN/log"
+  DARWIN_STATUS=0
+  DARWIN_OUT=$(cd "$TREE/work" && STUB_LOG="$DARWIN/log" FM_TEST_CONFINE_SYSTEM="$system" FM_TEST_SANDBOX_EXEC="$sandbox" \
+    DOPPLER_TOKEN=d GH_TOKEN=g AWS_REGION=us-east-1 "$SENS" confine --home "$TREE/home" -- "$@" 2>&1) || DARWIN_STATUS=$?
+}
+
+# Darwin goes through sandbox-exec: a no-op probe first, then the command. The
+# command sees the scrubbed environment, and the exit status passes through.
+darwin_confine Darwin "$DARWIN/sandbox-exec" -- sh -c "$SHOW_ENV"
+[ "$DARWIN_STATUS" -eq 5 ] || fail "the Darwin confine did not pass the command's exit status: $DARWIN_STATUS $DARWIN_OUT"
+[ "$DARWIN_OUT" = "doppler=unset gh=unset region=us-east-1" ] || fail "the Darwin confine did not scrub tokens and keep the rest: $DARWIN_OUT"
+[ "$(wc -l < "$DARWIN/log")" -eq 2 ] || fail "the Darwin confine should call sandbox-exec for a probe and for the command: $(cat "$DARWIN/log")"
+pass "a Darwin launch runs through sandbox-exec with tokens scrubbed"
+
+# Linux keeps the seccomp notifier and never touches sandbox-exec, even when one is offered.
+darwin_confine Linux "$DARWIN/sandbox-exec" -- python3 -c '
+import errno
+try:
+    open(".env").read()
+    print("read")
+except OSError as exc:
+    print("deny", exc.errno == errno.EACCES)
+'
+[ "$DARWIN_OUT" = "deny True" ] || fail "the Linux selection did not keep the seccomp read block: $DARWIN_OUT"
+[ ! -s "$DARWIN/log" ] || fail "the Linux selection called sandbox-exec"
+# The selection seam is for tests only: without FM_TEST_SEAM a Darwin request does nothing.
+seam_out=$(cd "$TREE/work" && env -u FM_TEST_SEAM STUB_LOG="$DARWIN/log" FM_TEST_CONFINE_SYSTEM=Darwin FM_TEST_SANDBOX_EXEC="$DARWIN/sandbox-exec" \
+  "$SENS" confine --home "$TREE/home" -- python3 -c '
+import errno
+try:
+    open(".env").read()
+    print("read")
+except OSError as exc:
+    print("deny", exc.errno == errno.EACCES)
+' 2>&1)
+[ "$seam_out" = "deny True" ] || fail "the platform seam took effect outside a test: $seam_out"
+[ ! -s "$DARWIN/log" ] || fail "sandbox-exec was called without the test seam"
+pass "a Linux launch keeps the seccomp confine and the platform seam is inert outside tests"
+
+# Any other system has no confine and refuses. A missing sandbox-exec, one that
+# cannot apply the profile, and a path the profile cannot express refuse too.
+# In every case the command never runs.
+RAN="$DARWIN/ran"
+refusal_case() {  # <label> <system> <sandbox-exec> <expected message>
+  rm -f "$RAN"
+  darwin_confine "$2" "$3" -- sh -c "$TOUCH_RAN" _ "$RAN"
+  [ "$DARWIN_STATUS" -eq 2 ] || fail "$1 should refuse with status 2, got $DARWIN_STATUS: $DARWIN_OUT"
+  [ ! -e "$RAN" ] || fail "$1 ran the model unconfined"
+  assert_contains "$DARWIN_OUT" "$4" "$1 did not say why it refused"
+}
+refusal_case "an unsupported system" FreeBSD "$DARWIN/sandbox-exec" "no confine exists for FreeBSD"
+refusal_case "a missing sandbox-exec" Darwin "$DARWIN/absent" "is missing"
+refusal_case "a sandbox-exec that cannot apply the profile" Darwin "$DARWIN/sandbox-exec-fails" "could not apply the read-block profile"
+assert_contains "$DARWIN_OUT" "Operation not permitted" "the refusal hid sandbox-exec's own reason"
+rm -f "$RAN"
+mkdir -p "$TREE/quoted\"home"
+DARWIN_OUT=$(cd "$TREE/work" && STUB_LOG="$DARWIN/log" FM_TEST_CONFINE_SYSTEM=Darwin FM_TEST_SANDBOX_EXEC="$DARWIN/sandbox-exec" \
+  "$SENS" confine --home "$TREE/quoted\"home" -- sh -c "$TOUCH_RAN" _ "$RAN" 2>&1) && DARWIN_STATUS=0 || DARWIN_STATUS=$?
+[ "$DARWIN_STATUS" -eq 2 ] && [ ! -e "$RAN" ] || fail "a home the profile cannot express still ran the model: $DARWIN_STATUS $DARWIN_OUT"
+pass "an unsupported system, a missing or failing sandbox-exec, and an inexpressible home all refuse without running the model"
+
+# Profile content: default allow with a read block, no network or blanket write
+# rule, and the process-information rules standing in for /proc/<pid>/environ.
+"$SENS" confine-profile --home "$TREE/home" --root "$TREE/work" > "$DARWIN/profile.sb" || fail "confine-profile failed"
+profile=$(cat "$DARWIN/profile.sb")
+assert_contains "$profile" "(version 1)" "profile has no version"
+assert_contains "$profile" "(allow default)" "profile is not default-allow"
+assert_contains "$profile" "(deny file-read* file-write-data file-write-create process-exec* (regex" "profile has no read, write, and exec block"
+assert_contains "$profile" "(deny process-info* (target others))" "profile does not block other processes' information"
+assert_contains "$profile" '(deny sysctl-read (sysctl-name "kern.procargs2"))' "profile does not block the process argument and environment sysctl"
+assert_not_contains "$profile" "network" "profile restricts the network, which the Linux confine does not"
+assert_not_contains "$profile" "file-write*" "profile blocks writes broadly, which the Linux confine does not"
+assert_not_contains "$profile" "(allow file" "profile adds an allow rule beyond the default"
+if "$SENS" confine-profile --home '/tmp/a"b' --root "$TREE/work" >/dev/null 2>&1; then
+  fail "a home with a quote produced a profile"
+fi
+pass "the Darwin profile is default-allow with the read block, process-information rules, and no network or write rule"
+
+# Oracle: the Linux read block decides which paths are blocked. The profile's
+# regexes, evaluated with Python's re (the profile uses only constructs shared
+# with POSIX extended regular expressions), must block exactly the same
+# generated absolute paths, in either letter case where macOS folds case.
+python3 -I - "$ROOT/bin/fm-free-model-sensitivity.py" "$DARWIN/profile.sb" "$TREE/home" "$TREE/work" "$SEED" <<'PY' || fail "the Darwin profile and the Linux read block disagree"
+import importlib.util, os, random, re, sys
+
+module_path, profile_path, home, root, seed = sys.argv[1:6]
+spec = importlib.util.spec_from_file_location("sens", module_path)
+sens = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(sens)
+patterns = [
+    re.compile(m.group(1))
+    for m in re.finditer(r'\(regex #"([^"]*)"\)', open(profile_path, encoding="utf-8").read())
+]
+if len(patterns) < 20:
+    sys.exit(f"profile carried only {len(patterns)} path rules")
+
+dirs = [
+    "src", "auth", "payments", "migrations", "infra", "terraform", ".github", "workflows",
+    ".circleci", ".buildkite", ".secrets", "secrets", "pkg", "docs", "bin", "helm", "k8s",
+    "deploy", ".doppler", ".aws", ".config", "gh", "gcloud", ".ssh", "node_modules",
+]
+files = [
+    ".env", ".env.local", "a.env", "env.local", "env.production", "doppler.yaml", ".doppler.yml",
+    "secrets.json", "secrets.toml", "credentials.json", "auth.py", "oauth.js", "payment.ts",
+    "stripe.go", "main.tf", "x.tfvars", "vercel.json", "Dockerfile", "docker-compose.yml",
+    "docker-compose.prod.yaml", "deploy.sh", "redeploy-now.sh", "values.yaml", "values-prod.yml",
+    "a.k8s.yaml", "my-deployment.yaml", "web-ingress.yml", "001_migration_x.sql", "migration.sql",
+    "app.ts", "README.md", "hosts.yml", "token", "Jenkinsfile", ".gitlab-ci.yml", "ci.yml",
+    "chart.yaml", ".netrc", ".git-credentials", "service-account.json", "x.sql",
+]
+bases = [root, home, os.path.dirname(root), "/opt/tool", "/tmp"]
+rnd = random.Random(int(seed))
+seen = {True: 0, False: 0}
+for _ in range(20000):
+    base = rnd.choice(bases)
+    rest = "/".join([rnd.choice(dirs) for _ in range(rnd.randrange(0, 4))] + [rnd.choice(files + dirs)])
+    # Token stores under the home are matched case-sensitively on Linux, and
+    # the profile folds case on purpose, so only other bases are upper-cased.
+    if base != home and rnd.random() < 0.2:
+        rest = rest.upper()
+    path = base + "/" + rest
+    expected = sens.path_blocked(path, home, root)
+    got = any(p.match(path) for p in patterns)
+    if got != expected:
+        sys.exit(f"seed={seed} linux={expected} darwin={got} path={path}")
+    seen[expected] += 1
+if not (seen[True] > 500 and seen[False] > 500):
+    sys.exit(f"oracle check was vacuous: {seen}")
+PY
+pass "the Darwin profile blocks exactly the paths the Linux read block blocks"
+
 echo "# all fm-free-model-sensitivity tests passed"

@@ -16,7 +16,11 @@ under this same scrub and read block in a scratch copy of the caller's
 current tree, prints only the model's change against that copy, and never
 touches the caller's worktree. The worker reviews that diff before applying it.
 
-The read block is a seccomp user notifier in the parent. Segment classes
+On Linux the read block is a seccomp user notifier in the parent. On macOS it
+is a sandbox-exec profile that denies the same classes of path (see
+darwin_profile), and a launch refuses when /usr/bin/sandbox-exec is missing or
+the profile does not apply. No platform ever runs the model unconfined.
+Segment classes
 apply inside the task worktree, the directory confine starts in, so toolchain
 files elsewhere stay readable. Env and Doppler file names, secrets files,
 and token stores apply anywhere. The child cannot
@@ -637,16 +641,20 @@ def supervise(notify_fd: int, child: int, home: str, root: str, names: dict[str,
             continue
 
 
-def confine(home: str, command: list[str]) -> int:
+def scrub_tokens() -> None:
+    for key in list(os.environ):
+        if token_name(key):
+            del os.environ[key]
+
+
+def confine_linux(home: str, command: list[str]) -> int:
     root = os.path.realpath(os.getcwd())
     tables = arch_tables()
     if tables is None:
         print("free-model sensitivity: this architecture cannot confine a free OpenCode model", file=sys.stderr)
         return 2
     audit, sys_seccomp, sys_prctl, names, deny_names, _open = tables
-    for key in list(os.environ):
-        if token_name(key):
-            del os.environ[key]
+    scrub_tokens()
     parent, child = socket.socketpair()
     pid = os.fork()
     if pid == 0:
@@ -689,6 +697,159 @@ def confine(home: str, command: list[str]) -> int:
     if os.WIFSIGNALED(status):
         return 128 + os.WTERMSIG(status)
     return 1
+
+
+SANDBOX_EXEC = "/usr/bin/sandbox-exec"
+SBPL_UNSAFE = set('"\\^]')
+SBPL_LITERAL = set(".*+?(){}|$[")
+
+
+def sbpl_regex(text: str) -> str:
+    """Escape text for an SBPL regex, matching letters in either case.
+
+    macOS volumes fold case by default, so a case-sensitive pattern would let
+    `.ENV` through where `.env` is blocked. Characters that would end the
+    string or open a regex construct are escaped as one-character classes.
+    """
+    out = []
+    for char in text:
+        if char in SBPL_UNSAFE or ord(char) < 0x20 or ord(char) == 0x7F:
+            raise ValueError(f"path character {char!r} cannot be written into a sandbox profile")
+        if char.isascii() and char.isalpha():
+            out.append(f"[{char.lower()}{char.upper()}]")
+        elif char in SBPL_LITERAL:
+            out.append(f"[{char}]")
+        else:
+            out.append(char)
+    return "".join(out)
+
+
+def sbpl_alternatives(names) -> str:
+    return "(" + "|".join(sbpl_regex(name) for name in sorted(names)) + ")"
+
+
+def darwin_block_patterns(home: str, root: str) -> list[str]:
+    """Regexes over a resolved absolute path that mirror path_blocked.
+
+    Every pattern is anchored at both ends, so it reads the same whether the
+    sandbox matches a whole path or searches within it. Paths reach the
+    sandbox already resolved, so a symlink to a blocked file is blocked as the
+    file it names. A pattern that must match a path and everything under it is
+    emitted as two patterns, one for the path and one for its children.
+    """
+    patterns = []
+
+    def below(prefix: str, body: str) -> None:
+        patterns.append(f"^{prefix}{body}$")
+        patterns.append(f"^{prefix}{body}/.*$")
+
+    # The file-name classes apply anywhere.
+    patterns.append("^.*/[^/]*" + sbpl_regex(".env") + "$")
+    patterns.append("^.*/" + sbpl_regex(".env.") + "[^/]*$")
+    patterns.append("^.*/" + sbpl_alternatives(ENV_NAMES | DOPPLER_NAMES | SECRET_NAMES) + "$")
+    below(".*/", sbpl_regex(".secrets"))
+    homes = {os.path.normpath(home), os.path.realpath(home)} if home and os.path.isabs(home) else set()
+    for base in sorted(homes):
+        prefix = sbpl_regex(base.rstrip("/")) + "/"
+        below(prefix, sbpl_alternatives(TOKEN_STORES))
+    # The path classes apply only inside the task worktree.
+    inside = sbpl_regex(root.rstrip("/")) + "(/|/.*/)"
+    patterns.append(f"^{inside}" + sbpl_alternatives(CI_NAMES) + "$")
+    below(inside, "[.]" + "(" + sbpl_regex("circleci") + "|" + sbpl_regex("buildkite") + ")")
+    below(inside, sbpl_regex(".github/workflows"))
+    patterns.append(f"^{inside}" + sbpl_alternatives(SEGMENTS) + "/.+$")
+    patterns.append(f"^{inside}[^/]*" + sbpl_regex("migration") + "[^/]*" + sbpl_regex(".sql") + "$")
+    patterns.append(f"^{inside}[^/]*" + sbpl_regex(".") + "(" + sbpl_regex("tf") + "|" + sbpl_regex("tfvars") + ")$")
+    infra_names = {
+        "vercel.json", "dockerfile", "fly.toml", "cdk.json", "chart.yaml", "chart.yml",
+        "serverless.yml", "serverless.yaml", "render.yaml", "render.yml", "pulumi.yaml", "pulumi.yml",
+        "values.yaml", "values.yml",
+    }
+    patterns.append(f"^{inside}" + sbpl_alternatives(infra_names) + "$")
+    yaml_ext = "(" + sbpl_regex(".yml") + "|" + sbpl_regex(".yaml") + ")"
+    patterns.append(f"^{inside}" + sbpl_regex("docker-compose") + "[^/]*" + yaml_ext + "$")
+    patterns.append(f"^{inside}[^/]*" + sbpl_regex("deploy") + "[^/]*" + sbpl_regex(".sh") + "$")
+    patterns.append(f"^{inside}" + sbpl_regex("values-") + "[^/]*" + yaml_ext + "$")
+    patterns.append(f"^{inside}[^/]*" + sbpl_regex(".k8s") + yaml_ext + "$")
+    patterns.append(f"^{inside}[^/]*" + sbpl_regex("deployment") + "[^/]*" + yaml_ext + "$")
+    patterns.append(f"^{inside}[^/]*" + sbpl_regex("ingress") + "[^/]*" + yaml_ext + "$")
+    stems = sbpl_alternatives(FILE_STEMS)
+    patterns.append(f"^{inside}{stems}$")
+    patterns.append(f"^{inside}{stems}" + sbpl_regex(".") + "[^/]*$")
+    return patterns
+
+
+def darwin_profile(home: str, root: str) -> str:
+    """The sandbox-exec profile: default allow, with the read block denied.
+
+    Open for read, open for write or create, stat, access, readlink, and exec
+    of a blocked path are all denied, as the Linux notifier denies every one
+    of those calls on it. Network, other writes, and the rest stay allowed.
+    The last two rules stand in for /proc/<pid>/environ and /proc/<pid>/mem:
+    another process's environment block, which still holds the tokens the
+    supervisor unset, and its memory.
+    """
+    lines = ["(version 1)", "(allow default)"]
+    for pattern in darwin_block_patterns(home, root):
+        lines.append(f'(deny file-read* file-write-data file-write-create process-exec* (regex #"{pattern}"))')
+    lines.append("(deny process-info* (target others))")
+    lines.append('(deny sysctl-read (sysctl-name "kern.procargs2"))')
+    return "\n".join(lines) + "\n"
+
+
+def sandbox_exec_path() -> str:
+    if os.environ.get("FM_TEST_SEAM") == "1" and os.environ.get("FM_TEST_SANDBOX_EXEC"):
+        return os.environ["FM_TEST_SANDBOX_EXEC"]
+    return SANDBOX_EXEC
+
+
+def confine_darwin(home: str, command: list[str]) -> int:
+    sandbox = sandbox_exec_path()
+    if not (os.path.isfile(sandbox) and os.access(sandbox, os.X_OK)):
+        print(f"free-model sensitivity: {sandbox} is missing, so a free OpenCode model cannot be confined and was not run", file=sys.stderr)
+        return 2
+    try:
+        profile = darwin_profile(home, os.path.realpath(os.getcwd()))
+    except ValueError as exc:
+        print(f"free-model sensitivity: {exc}, so a free OpenCode model cannot be confined and was not run", file=sys.stderr)
+        return 2
+    scrub_tokens()
+    # sandbox-exec returns the command's own status, so a profile that fails
+    # to apply cannot be told from a command that exits with the same number.
+    # Applying the profile to a no-op first makes a failure unambiguous.
+    try:
+        probe = subprocess.run([sandbox, "-p", profile, "/usr/bin/true"], capture_output=True, env=os.environ)
+    except OSError as exc:
+        print(f"free-model sensitivity: sandbox-exec failed to start ({exc}), so a free OpenCode model cannot be confined and was not run", file=sys.stderr)
+        return 2
+    if probe.returncode != 0:
+        detail = probe.stderr.decode("utf-8", "replace").strip()
+        print(f"free-model sensitivity: sandbox-exec could not apply the read-block profile ({detail or 'status ' + str(probe.returncode)}), so a free OpenCode model cannot be confined and was not run", file=sys.stderr)
+        return 2
+    try:
+        status = subprocess.run([sandbox, "-p", profile, *command], env=os.environ).returncode
+    except OSError as exc:
+        print(f"free-model sensitivity: confine failed: {exc}", file=sys.stderr)
+        return 2
+    if status < 0:
+        return 128 - status
+    return status
+
+
+def confine_system() -> str:
+    if os.environ.get("FM_TEST_SEAM") == "1" and os.environ.get("FM_TEST_CONFINE_SYSTEM"):
+        return os.environ["FM_TEST_CONFINE_SYSTEM"]
+    return platform.system()
+
+
+def confine(home: str, command: list[str]) -> int:
+    system = confine_system()
+    if system == "Linux":
+        return confine_linux(home, command)
+    if system == "Darwin":
+        return confine_darwin(home, command)
+    print(f"free-model sensitivity: no confine exists for {system or 'this system'}, so a free OpenCode model was not run", file=sys.stderr)
+    return 2
 
 
 class GitError(Exception):
@@ -898,6 +1059,7 @@ def usage() -> None:
         "       fm-free-model-sensitivity.sh brief-sensitive --brief <file>\n"
         "       fm-free-model-sensitivity.sh apply-resolution --brief <file>\n"
         "       fm-free-model-sensitivity.sh confine --home <dir> -- <command>...\n"
+        "       fm-free-model-sensitivity.sh confine-profile --home <dir> [--root <dir>]\n"
         "       fm-free-model-sensitivity.sh mech [--model <id>] --path <path> [--path <path>...] -- <edit>\n"
         "\n"
         "mech hands a rename, a format, boilerplate, or test scaffolding to a free OpenCode model.\n"
@@ -999,6 +1161,22 @@ def main(argv: list[str]) -> int:
             print("free-model sensitivity: confine needs --home", file=sys.stderr)
             return 2
         return confine(home, command)
+    if cmd == "confine-profile":
+        try:
+            home = flag_value(argv[2:], "--home")
+        except SystemExit:
+            usage()
+            return 2
+        try:
+            root = flag_value(argv[2:], "--root")
+        except SystemExit:
+            root = os.getcwd()
+        try:
+            sys.stdout.write(darwin_profile(home, os.path.realpath(root)))
+        except ValueError as exc:
+            print(f"free-model sensitivity: {exc}", file=sys.stderr)
+            return 2
+        return 0
     if cmd == "mech":
         return mech(argv[2:])
     usage()

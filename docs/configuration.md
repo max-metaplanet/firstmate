@@ -2054,7 +2054,11 @@ After that classification, a declared target path in a sensitive class cannot re
 A free OpenCode model is an id whose last segment is `free`, `big-pickle`, or ends in `-free` or `:free`, or an OpenCode launch that names no model or `default`.
 The read block applies directory and file classes such as auth, migrations, infra, payments, and CI inside the task worktree only, so toolchain files elsewhere stay readable; env and Doppler file names, secrets files, and token stores stay blocked everywhere, including the primary checkout.
 A routine path may still resolve to a free OpenCode model, and a paid OpenCode model or any other harness keeps its environment and its read access.
-The read block is a Linux seccomp notifier on x86_64 or aarch64, so a free OpenCode launch fails on any other host, and a launch refuses when the [Orca environment source](#orca-environment-source-configlaunch-env-tmux-session) would forward one of the scrubbed token names.
+The read block is a Linux seccomp notifier on x86_64 or aarch64, or on macOS a `sandbox-exec` profile that denies the same paths.
+The macOS profile denies open, write, create, stat, and exec of a blocked path, and other processes' information and the `kern.procargs2` sysctl in place of `/proc/<pid>/environ` and `mem`.
+It restricts neither the network nor other writes, as the Linux block does not.
+A free OpenCode launch refuses on any other host, and also on macOS when `/usr/bin/sandbox-exec` is missing or the profile does not apply, and it never runs unconfined.
+A launch also refuses when the [Orca environment source](#orca-environment-source-configlaunch-env-tmux-session) would forward one of the scrubbed token names.
 
 **What the model receives**
 
