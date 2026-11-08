@@ -425,7 +425,9 @@
 #   This is an exec environment boundary, not a sandbox for the pane's startup
 #   shell, credential files, same-user processes, or later shell initialization.
 #   A free OpenCode model is the exception: bin/fm-free-model-sensitivity.sh
-#   owns that launch's token scrub, read block, and sensitive-target refusal.
+#   owns that launch's token scrub, read block, network denial, and
+#   sensitive-target refusal; the two model-proxy variables it sets are
+#   forwarded through this wrapper.
 #   See docs/configuration.md for provider/Git setup and supported limits.
 #   On backend=orca the destination is an Orca terminal whose environment comes
 #   from the Orca app and shell startup, not this home, so a nonempty allowlist
@@ -7554,6 +7556,22 @@ if [ -n "$HARNESS" ]; then
         exit 1
       fi
       LAUNCH=$fm_confined_launch
+      # The confine denies the network and sets the variables that point the
+      # model client at its loopback proxy. The launch-env-allowlist env -i
+      # wrapper would drop them, so forward exactly those two through it.
+      if [ "$LAUNCH_ENV_ENABLED" = 1 ]; then
+        fm_env_head='/usr/bin/env -i '
+        case $LAUNCH in
+          *"$fm_env_head"*) ;;
+          *)
+            echo "error: cannot forward the model proxy variables through the launch environment wrapper for free OpenCode model '${MODEL:-default}'; refusing launch" >&2
+            exit 1
+            ;;
+        esac
+        # shellcheck disable=SC2016
+        fm_env_forward='${OPENCODE_CONFIG+"OPENCODE_CONFIG=$OPENCODE_CONFIG"} ${OPENCODE_MODELS_URL+"OPENCODE_MODELS_URL=$OPENCODE_MODELS_URL"} '
+        LAUNCH=${LAUNCH/"$fm_env_head"/"$fm_env_head$fm_env_forward"}
+      fi
       LAUNCH="$(shell_quote "$SCRIPT_DIR/fm-free-model-sensitivity.sh") confine --home $(shell_quote "${HOME:-}") -- /bin/sh -c $(shell_quote "$LAUNCH")"
       ;;
     1) ;;

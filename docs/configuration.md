@@ -2055,9 +2055,31 @@ A free OpenCode model is an id whose last segment is `free`, `big-pickle`, or en
 The read block applies directory and file classes such as auth, migrations, infra, payments, and CI inside the task worktree only, so toolchain files elsewhere stay readable; env and Doppler file names, secrets files, and token stores stay blocked everywhere, including the primary checkout.
 A routine path may still resolve to a free OpenCode model, and a paid OpenCode model or any other harness keeps its environment and its read access.
 The read block is a Linux seccomp notifier on x86_64 or aarch64, or on macOS a `sandbox-exec` profile that denies the same paths.
+Both platforms read one definition of the home-relative blocked set, so they cannot drift: `~/.ssh`, `~/.gnupg`, `~/.netrc`, `~/.git-credentials`, `~/.npmrc`, `~/.docker/config.json`, the keychains (`~/Library/Keychains`, `~/.local/share/keyrings`, `/Library/Keychains`, `/System/Library/Keychains`), the cloud and Doppler token stores, and OpenCode's `~/.config/opencode/service.json`, whose password would drive the shared background service outside the confine.
+Any file ending in `.pem` or `.key` under the home is blocked in any letter case, and the same suffix outside the home stays readable.
 The macOS profile denies open, write, create, stat, and exec of a blocked path, and other processes' information and the `kern.procargs2` sysctl in place of `/proc/<pid>/environ` and `mem`.
-It restricts neither the network nor other writes, as the Linux block does not.
+Other writes stay allowed on both platforms.
 A free OpenCode launch refuses on any other host, and also on macOS when `/usr/bin/sandbox-exec` is missing or the profile does not apply, and it never runs unconfined.
+
+**Free-model network guarantee**
+
+The confined process has no route off the machine on either platform, and the design is the same on both: no network for the confined process, with the model call made by an unconfined parent that passes only model traffic.
+Per-host egress is not enforceable on either platform, so it is not claimed.
+The model hosts sit behind shared CDN addresses, seccomp sees socket addresses and never hostnames, `sandbox-exec` matches addresses, ports, and `localhost` rather than DNS names, and OpenCode ignores `HTTPS_PROXY`.
+The confined process may use loopback TCP only, which OpenCode's private server needs: no off-host address, no unix socket connect or bind, no wildcard bind, and no datagram or raw socket, so DNS fails too.
+On Linux the seccomp program refuses those socket types and any send that names a destination, and the supervisor completes `connect`, `bind`, and `listen` itself on a duplicate of the child's descriptor after checking the address once, so a thread rewriting the address cannot change what was checked.
+On macOS the profile denies `network*` and allows only `localhost` outbound, bind, and inbound; macOS also lets that process use loopback UDP.
+The two differ only there, and neither reaches an address off the machine.
+Loopback services on the same machine, such as a local model server, stay reachable from the confined process on both platforms.
+The supervisor starts a loopback forwarder before the launch and points the model client at it by setting `OPENCODE_CONFIG`, a private file that overrides the `baseURL` of the `opencode` and `openrouter` providers, and `OPENCODE_MODELS_URL`.
+A launch that already sets either variable has it replaced for the confined process, and `config/launch-env-allowlist` forwards exactly those two through its `env -i` wrapper.
+The forwarder enforces the hostnames itself, since it is unconfined: only `opencode.ai/zen` and `openrouter.ai/api` under `/v1/`, and `models.dev` for the catalog, each behind a per-launch random path prefix, with no `..` segment and no chunked request body.
+It forwards the client's own headers, so the `Authorization` header the model client sends reaches the model host.
+A paid OpenCode model, a provider other than those two, and any non-OpenCode harness are not routed through it.
+A free-model worker launched by `bin/fm-spawn.sh` therefore cannot push, call `gh`, or fetch packages from inside the confine.
+The confine refuses and runs nothing when it cannot deny the network, which means when the supervisor cannot duplicate a socket descriptor (no `pidfd_open` or `pidfd_getfd`), when the loopback forwarder cannot start, or when the filter or profile does not apply.
+`bin/fm-free-model-sensitivity.sh confine-check` runs the guarantees under the real confine with planted credential files and reports `PASS` or `FAIL` for each, and it is the proof to run on the macOS machine; the test suite cannot run `sandbox-exec`.
+OpenCode's own provider keys, such as `~/.local/share/opencode/auth.json`, are not in the blocked set, because the forwarder passes the client's `Authorization` header through rather than injecting a key, so a stored provider key stays readable to the model and can only travel to the two model hosts.
 A launch also refuses when the [Orca environment source](#orca-environment-source-configlaunch-env-tmux-session) would forward one of the scrubbed token names.
 
 **What the model receives**
