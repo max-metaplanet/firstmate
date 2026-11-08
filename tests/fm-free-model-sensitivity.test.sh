@@ -865,6 +865,19 @@ def nonblocking():
         pass
 attempt("loopback-nonblocking", nonblocking)
 attempt("socketpair", socket.socketpair)
+attempt("sctp-socket", lambda: socket.socket(socket.AF_INET, socket.SOCK_STREAM, 132))
+attempt("mptcp-socket", lambda: socket.socket(socket.AF_INET, socket.SOCK_STREAM, 262))
+libc_probe = ctypes.CDLL(None, use_errno=True)
+def cross_process(number, *args):
+    def run():
+        if libc_probe.syscall(number, *args) < 0:
+            raise OSError(ctypes.get_errno(), "")
+    return run
+import platform
+arm = platform.machine() in ("aarch64", "arm64")
+attempt("ptrace", cross_process(117 if arm else 101, 0, os.getppid(), 0, 0))
+attempt("process-vm-readv", cross_process(270 if arm else 310, os.getppid(), 0, 0, 0, 0, 0))
+attempt("pidfd-getfd", cross_process(438, 0, 0, 0))
 # A second thread rewrites the address while connect reads it. The supervisor
 # reads the address once and completes the connect itself, so no attempt may
 # reach the off-host address: every outcome is success or EACCES, never a
@@ -904,9 +917,13 @@ print("race\t" + ",".join(sorted(errno.errorcode.get(o, str(o)) if o else "OK" f
 PY
 (cd "$CRED/work" && timeout 120 "$SENS" confine --home "$CRED/home" -- python3 "$TMP_ROOT/netprobe.py") > "$TMP_ROOT/net.out" 2>&1 || fail "network probe failed: $(cat "$TMP_ROOT/net.out")"
 net_line() { awk -F'\t' -v p="$1" '$2 == p' "$TMP_ROOT/net.out"; }
-for label in tcp-v4 tcp-v6 tcp-mapped udp-socket raw-socket unix-dgram unix-connect unix-bind sendto fastopen bind-wildcard bind-wildcard-v6 listen-unbound; do
+for label in sctp-socket mptcp-socket tcp-v4 tcp-v6 tcp-mapped udp-socket raw-socket unix-dgram unix-connect unix-bind sendto fastopen bind-wildcard bind-wildcard-v6 listen-unbound; do
   got=$(net_line "$label")
   [ "$got" = "err"$'\t'"$label"$'\t'EACCES ] || fail "confined network case $label should get EACCES, got: ${got:-nothing} ($(cat "$TMP_ROOT/net.out"))"
+done
+for label in ptrace process-vm-readv pidfd-getfd; do
+  got=$(net_line "$label")
+  [ "$got" = "err"$'\t'"$label"$'\t'EPERM ] || fail "confined cross-process call $label should get EPERM, got: ${got:-nothing}"
 done
 for label in loopback-roundtrip loopback-v6 loopback-nonblocking socketpair; do
   got=$(net_line "$label")

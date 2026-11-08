@@ -398,6 +398,10 @@ def arch_tables():
             "io_uring_setup": 425,
             "io_uring_enter": 426,
             "io_uring_register": 427,
+            "ptrace": 117,
+            "process_vm_readv": 270,
+            "process_vm_writev": 271,
+            "pidfd_getfd": 438,
         }, None
     if machine in ("x86_64", "amd64"):
         return 0xC000003E, 317, 157, {
@@ -416,6 +420,10 @@ def arch_tables():
             "io_uring_setup": 425,
             "io_uring_enter": 426,
             "io_uring_register": 427,
+            "ptrace": 101,
+            "process_vm_readv": 310,
+            "process_vm_writev": 311,
+            "pidfd_getfd": 438,
         }, 2
     return None
 
@@ -454,6 +462,7 @@ AF_INET = 2
 AF_INET6 = 10
 AF_NETLINK = 16
 SOCK_STREAM = 1
+IPPROTO_TCP = 6
 MSG_FASTOPEN = 0x20000000
 SYS_PIDFD_GETFD = 438
 PIDFD_THREAD = os.O_EXCL
@@ -533,7 +542,13 @@ def build_filter(audit_arch: int, notify: set[int], deny: set[int], net: dict[st
             ("label", "stream"),
             ("ld", arg_offset(1)),
             ("and", 0xF),
-            ("jeq", SOCK_STREAM, "allow", "eacces"),
+            ("jeq", SOCK_STREAM, "proto", "eacces"),
+            # SCTP and MPTCP can connect without the connect call the
+            # supervisor sees, so only the default protocol and TCP pass.
+            ("label", "proto"),
+            ("ld", arg_offset(2)),
+            ("jeq", 0, "allow"),
+            ("jeq", IPPROTO_TCP, "allow", "eacces"),
         ]
     if "sendto" in handlers:
         items += [
