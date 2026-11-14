@@ -940,10 +940,12 @@ def archive_source(root, names, links, archive, history_depth, key_files, head, 
             if name in SOURCE_ALLOWLIST or name in templates:
                 data = path.read_bytes()
                 if name in templates and not safe_template(data, name):
+                    blob = git(root, 'hash-object', '--stdin', input=data).decode().strip()
+                    committed = git(root, 'ls-tree', head, '--', name).split()
                     save(archive.parent / 'history-exclusions.json', {
                         'schema': 'fm-boat-exclusions.v1', 'objects': [dict(
-                            oid=git(root, 'hash-object', '--stdin', input=data).decode().strip(),
-                            path=name, commit=head, rule='template-content')]})
+                            oid=blob, path=name, rule='template-content',
+                            commit=head if committed[2:3] == [blob.encode()] else '')]})
                     raise Failure('history input template refused: ' + name, 2)
                 if name not in templates and not safe_allowlisted(name, data):
                     print('boat-offload: excluded allowlisted file with credential-looking content: ' +

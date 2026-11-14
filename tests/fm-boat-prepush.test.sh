@@ -195,9 +195,9 @@ assert killed['oom'] is True and killed['oom_evidence'] == 'cgroup oom_kill'
 assert lane(1, 'worker gone\n', kills=(-1, -1))['oom'] is False
 print('ok - out of memory is proven by the kernel, exit 137 or V8, never guessed')
 
-# Regression oracle: a silent hung lane must finish red within its own budget;
-# the next lane must still execute and retain its output. A timed-out child
-# need not have started printing before its deadline.
+# Regression oracle: a hung lane must finish red within its own budget,
+# retaining its last output; the next lane must still execute and retain its
+# output. The budget leaves the child ample time to start and print.
 import io
 import subprocess
 import time
@@ -205,15 +205,16 @@ remote.cgroup_oom_kills = lambda: 0
 start = time.monotonic()
 try:
     hung = remote.run_lane('hung', 'test', [sys.executable, '-c',
-        "import time; time.sleep(0.5)"],
-        {}, base, timeout=0.1)
+        "import time; print('last diagnostic', flush=True); time.sleep(5)"],
+        {}, base, timeout=1.0)
 except TypeError:
     raise AssertionError('lane execution has no per-lane timeout')
 assert hung['timeout'] and hung['exit'] == 124 and not hung['oom'], hung
-assert time.monotonic() - start < 2
+assert 'last diagnostic' in hung['output_tail'], hung
+assert time.monotonic() - start < 4
 following = lane(0, 'following lane completed\n')
 assert following['exit'] == 0 and following['output_tail'] == 'following lane completed\n', following
-print('ok - a silent timed-out lane stays red and releases following lanes with output preserved')
+print('ok - a timed-out lane retains diagnostics, stays red, and releases following lanes')
 
 # The adapter may preserve only raw stream frames when transport fails. Split
 # a marker across frames to reject parsing each frame as a complete line.
@@ -550,8 +551,8 @@ try:
             ran.append(name)
             if name == broken:
                 return saved[3](name, group, [sys.executable, '-c',
-                    "import time; time.sleep(1)"],
-                    {}, cwd, timeout=0.1)
+                    "import time; print('lane diagnostic', flush=True); time.sleep(5)"],
+                    {}, cwd, timeout=1.0)
             return {'name': name, 'exit': 0, 'oom': False, 'wall_s': 0}
         remote.run_lane = execute
         remote.emit = lambda kind, doc: events.append((kind, doc))
@@ -568,15 +569,15 @@ try:
         if not broken:
             assert 'verdict: green' in rendered.getvalue()
         else:
-            assert 'timeout' in rendered.getvalue()
+            assert 'timeout' in rendered.getvalue() and 'lane diagnostic' in rendered.getvalue()
             assert summary['failed'] == ['database-actions']
             assert summary['oom'] is False
         assert local.verdict({'adapter_exit': 0, 'summary': summary})[0] is (broken == '')
     # Run-budget contract: the adapter must receive a summary before its
     # deadline, with an active timeout and every never-started lane named.
-    # A 600-second lane limit would leave this real subprocess running for 2s
-    # and incorrectly report green instead of respecting the 1s lane budget.
-    os.environ['FM_PREPUSH_TIMEOUT'] = '11'
+    # A 600-second lane limit would leave this real subprocess running for 10s
+    # and incorrectly report green instead of respecting the 2s lane budget.
+    os.environ['FM_PREPUSH_TIMEOUT'] = '12'
     events, limits, ran = [], [], []
     remote.read_plan = lambda *args: plan(node={'matrix': [
         {'name': 'first', 'filters': [], 'passthrough': []},
@@ -586,7 +587,7 @@ try:
         ran.append(name)
         limits.append(timeout)
         return saved[3](name, group, [sys.executable, '-c',
-            "import time; print('budget diagnostic', flush=True); time.sleep(2)"],
+            "import time; print('budget diagnostic', flush=True); time.sleep(10)"],
             {}, cwd, timeout=timeout)
     remote.run_lane = budget_execute
     remote.emit = lambda kind, doc: events.append((kind, doc))
@@ -595,10 +596,11 @@ try:
     elapsed = remote.time.monotonic() - started
     assert events[-1][0] == 'SUMMARY', events
     summary = events[-1][1]
-    assert len(ran) == 1 and 0 < limits[0] <= 1, (ran, limits)
+    assert len(ran) == 1 and 0 < limits[0] <= 2, (ran, limits)
     assert elapsed < 6, elapsed
     active = summary['lanes'][-1]
     assert active['timeout'] and active['exit'] == 124 and not active['oom'], active
+    assert 'budget diagnostic' in active['output_tail'], active
     planned = next(doc['lanes'] for kind, doc in events if kind == 'PLAN')
     assert summary['unreported'] == planned[1:] and summary['unreported'], summary
     assert set(summary['failed']) == set(planned), summary

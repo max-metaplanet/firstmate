@@ -2449,6 +2449,26 @@ for name, unsafe_path, unsafe_content in [
     assert 'never-print' not in json.dumps(evidence)
 print('ok - excluded, credential-bearing and binary historical objects refuse locally with content-free evidence')
 
+for edited in (False, True):
+    p, state, env = case('template-working-tree-' + str(edited))
+    work = p / 'work'
+    unsafe = 'UNKNOWN_SECRET=never-print-rejected\n'
+    (work / '.env.example').write_text('API_TOKEN=\n' if edited else unsafe)
+    git(work, 'add', '-f', '.env.example')
+    git(work, 'commit', '-qm', 'template')
+    head = git(work, 'rev-parse', 'HEAD').stdout.decode().strip()
+    (work / '.env.example').write_text(unsafe)
+    oid = subprocess.run(['git', 'hash-object', '--stdin'], input=unsafe.encode(),
+                         capture_output=True, check=True).stdout.decode().strip()
+    r = launch(p, env)
+    assert r.returncode == 2, (edited, r.stderr)
+    assert not (state / 'calls.jsonl').exists()
+    evidence = json.loads((p / 'output/upload/history-exclusions.json').read_text())
+    assert evidence['objects'] == [{'oid': oid, 'path': '.env.example', 'rule': 'template-content',
+                                    'commit': '' if edited else head}], evidence
+    assert 'never-print-rejected' not in json.dumps(evidence)
+print('ok - a refused template names its commit only when that commit holds the refused bytes')
+
 p, state, env = case('history-current-blob', clean_history=True)
 work = p / 'work'
 (work / 'current.txt').write_text('API_SECRET=current-tree-value\n')
