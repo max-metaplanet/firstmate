@@ -1754,6 +1754,10 @@ for history_mode in (False, True):
         if label == 'directory-chain':
             (work / 'directory-link').symlink_to('.agents/skills')
         git(work, 'add', '--force', '.')
+        if history_mode:
+            # Selected history must be complete, so refused targets stay unselected.
+            git(work, 'rm', '--cached', '--', '.env.fixture', '.claude/settings.json',
+                'filtered-dir/.env.fixture', 'account-material.txt')
         git(work, 'commit', '-qm', 'symlink fixture')
         (work / 'untracked-target.txt').write_text('host file outside selection\n')
         if label == 'deleted-link':
