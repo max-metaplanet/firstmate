@@ -174,7 +174,7 @@
 # Current tracked edits/deletions still apply.
 # A commit's bytes are its identity, so it cannot be withheld and its scan is
 # the one that cannot afford a false positive: a commit, with its headers and
-# message, discards the history attempt when it is not UTF-8,
+# message, refuses selected history when it is not UTF-8,
 # contains binary content, a credential-key assignment using =, a screened
 # bearer token, or an issued credential (private-key block or provider key).
 # Command names such as secrets:scan and quoted example URLs remain prose.
