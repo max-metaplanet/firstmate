@@ -409,6 +409,235 @@ runpy.run_path(fixture, run_name='__main__')
     assert not path.exists() or path.read_text().rsplit(')', 1)[1].split()[0] == 'Z', pid
     return p, state, env, r
 
+def copy_completeness_cases():
+    template = ('COMPANY_NAME="Vercel Inc."\nSITE_NAME="Next.js Commerce"\n'
+                'SHOPIFY_STORE_DOMAIN="[your-shopify-store-subdomain].myshopify.com"\n'
+                '# bearer token, which core answers 401. Use the origin directly.\n'
+                'MAIL_API_URL=https://metaplanet.jp\nREQUIRE_SECRET_IN_DEV=false\n'
+                'SHOP_BASE_CURRENCY=JPY\nUSE_IN_MEMORY_TRACKER=false\n'
+                'VERBOSE_CART_DISCOUNT_DEBUG=false\nSERVER_LOG_LEVEL=INFO\n'
+                'SERVER_LOG_FORMAT=human\nNEXT_PUBLIC_CLIENT_LOG_ENABLED=false\n'
+                'NEXT_PUBLIC_CLIENT_LOG_LEVEL=INFO\nNEXT_PUBLIC_CLIENT_LOG_FORMAT=human\n'
+                'NEXT_PUBLIC_DEBUG_AUTO_LOG=false\nNEXT_PUBLIC_DEBUG_LOG_INTERVAL=5000\n'
+                '# Debug log API secret (required for POST and GET requests to /api/debug-logs, passed as ?secret=)\n'
+                'SHOPIFY_STOREFRONT_ACCESS_TOKEN=\n')
+    for mode in ('depth', 'input'):
+        p, state, env = case('copy-complete-' + mode, clean_history=True)
+        work = p / 'work'
+        (work / '.env.example').write_text('API_TOKEN=\n')
+        target = work / 'apps/planetgear/.env.example'
+        target.parent.mkdir(parents=True)
+        target.write_text(template)
+        git(work, 'add', '--all')
+        git(work, 'commit', '-qm', 'reviewed templates')
+        common = git(work, 'rev-parse', 'HEAD').stdout.decode().strip()
+        git(work, 'checkout', '-qb', 'main-input')
+        (work / 'main.txt').write_text('main change\n')
+        (work / '.env.example').write_text('API_TOKEN=\nURL=\n')
+        git(work, 'add', '--all')
+        git(work, 'commit', '-qm', 'main')
+        main = git(work, 'rev-parse', 'HEAD').stdout.decode().strip()
+        git(work, 'update-ref', 'refs/remotes/origin/main', main)
+        git(work, 'checkout', '-qb', 'feature-input', common)
+        (work / 'feature.txt').write_text('feature change\n')
+        git(work, 'add', '--all')
+        git(work, 'commit', '-qm', 'feature')
+        head = git(work, 'rev-parse', 'HEAD').stdout.decode().strip()
+        value = dict(schema='fm-boat-history.v1', source=str(work), head=head,
+                     head_ref='refs/heads/feature-input', refs={'refs/remotes/origin/main':
+                     {'ref': 'refs/heads/main-input', 'oid': main}}, depth=1, objects=[], templates=[])
+        path = p / 'history.json'
+        path.write_text(json.dumps(value))
+        options = ('--history-depth', '1') if mode == 'depth' else ('--history-input', str(path))
+        refused = launch(p, env, options=options)
+        assert refused.returncode == 2 and b'merge ancestry incomplete' in refused.stderr, refused.stderr
+        assert not (state / 'calls.jsonl').exists()
+        assert not (p / 'output/upload/source.tar.gz').exists()
+        value['depth'] = 2
+        path.write_text(json.dumps(value))
+        options = ('--history-depth', '2') if mode == 'depth' else ('--history-input', str(path))
+        check = f"""import pathlib,subprocess
+subprocess.run(['git','clone','--quiet','--shared','--no-checkout','.', '../copy'],check=True)
+def git(*args): return subprocess.check_output(['git','-C','../copy',*args]).decode().strip()
+git('update-ref','refs/remotes/origin/main',{main!r})
+git('checkout','--quiet','--detach',{head!r})
+git('-c','user.name=Fixture','-c','user.email=fixture@example.invalid','merge','--quiet','--no-ff','--no-edit',{main!r})
+assert git('rev-parse','HEAD^1') == {head!r}
+assert git('rev-parse','HEAD^2') == {main!r}
+assert pathlib.Path('../copy/apps/planetgear/.env.example').read_text() == {template!r}
+assert pathlib.Path('../copy/.env.example').read_text() == 'API_TOKEN=\\nURL=\\n'
+assert git('status','--porcelain') == ''
+assert git('fsck','--full','--no-reflogs') == ''
+"""
+        r = next_run(p, env, 'python3 -c ' + shlex.quote(check), options)
+        assert r.returncode == 0, (r.stdout, r.stderr, result(p))
+        assert result(p)['history'] == 'screened'
+        assert json.loads((p / 'output/upload/history-exclusions.json').read_text())['objects'] == []
+        empty(state)
+    print('ok - depth and pinned archives retain reviewed defaults and exact head/main through clone, checkout and merge')
+
+    rejected = [
+        ('.env', 'API_TOKEN=never-print-rejected\n'),
+        ('.env', 'working edit\n'),
+        ('.env.local', 'API_TOKEN=never-print-rejected\n'),
+        ('other/.env.example', 'API_TOKEN=\n'),
+        ('tests/fixture.env', 'API_SECRET=never-print-rejected\n'),
+        ('.env.example', 'UNKNOWN_SECRET=never-print-rejected\n'),
+        ('.env.example', '# bearer never-print-rejected\n'),
+        ('.env.example', '# -----BEGIN PRIVATE KEY-----\n'),
+        ('.env.example', '# ghp_012345678901234567890123\n'),
+        ('apps/planetgear/.env.example', 'SERVER_LOG_LEVEL=never-print-rejected\n'),
+        ('apps/planetgear/.env.example', template + 'UNKNOWN_SECRET=never-print-rejected\n'),
+        ('apps/planetgear/.env.example', template.replace('bearer token,', 'bearer never-print-rejected,')),
+        ('apps/planetgear/.env.example', template.replace('?secret=)', '?secret=never-print-rejected)')),
+    ]
+    for i, (selected, contents) in enumerate(rejected):
+        p, state, env = case('copy-refused-' + str(i), clean_history=True)
+        work = p / 'work'
+        target = work / selected
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(contents)
+        git(work, 'add', '--force', '--all')
+        git(work, 'commit', '-qm', 'unsafe selected snapshot')
+        head = git(work, 'rev-parse', 'HEAD').stdout.decode().strip()
+        oid = git(work, 'rev-parse', 'HEAD:' + selected).stdout.decode().strip()
+        # Historical bytes must pass independently of the working tree.
+        target.unlink()
+        git(work, 'update-ref', 'refs/remotes/origin/main', head)
+        r = launch(p, env, options=('--history-depth', '1'))
+        assert r.returncode == 2, (selected, r.stderr)
+        assert not (state / 'calls.jsonl').exists()
+        assert not (p / 'output/upload/source.tar.gz').exists()
+        evidence = json.loads((p / 'output/upload/history-exclusions.json').read_text())
+        assert any(item['oid'] == oid and item['path'] == selected and item['commit'] == head
+                   for item in evidence['objects']), evidence
+        assert b'never-print-rejected' not in r.stdout + r.stderr + (p / 'output/result.json').read_bytes()
+        assert 'never-print-rejected' not in json.dumps(evidence)
+    print('ok - incomplete selected closure refuses before any provider call with content-free object/path/commit/rule evidence')
+
+
+def merge_ancestry_cases():
+    for mode in ('depth', 'input'):
+        for reverse in (False, True):
+            p, state, env = case('concealed-ancestor-' + mode + '-' + str(reverse), clean_history=True)
+            work = p / 'work'
+            git(work, 'reset', '--hard', 'HEAD')
+            a = git(work, 'rev-parse', 'HEAD').stdout.decode().strip()
+            original_tree = git(work, 'rev-parse', 'HEAD^{tree}').stdout.decode().strip()
+            (work / 'tracked.txt').write_text('ancestor change\n')
+            git(work, 'add', 'tracked.txt')
+            changed_tree = git(work, 'write-tree').stdout.decode().strip()
+            def commit(tree, label, *parents):
+                args = [arg for parent in parents for arg in ('-p', parent)]
+                return git(work, 'commit-tree', tree, *args, '-m', label).stdout.decode().strip()
+            b = commit(changed_tree, 'B', a)
+            y = commit(original_tree, 'Y', b)
+            x = commit(original_tree, 'X', y)
+            m = commit(original_tree, 'M', a, x)
+            h = commit(changed_tree, 'H', b)
+            head, main = (m, h) if reverse else (h, m)
+            assert git(work, 'merge-base', '--all', head, main).stdout.decode().strip() == b
+            git(work, 'checkout', '-qB', 'feature-input', head)
+            git(work, 'update-ref', 'refs/heads/main-input', main)
+            git(work, 'update-ref', 'refs/remotes/origin/main', main)
+            manifest = dict(schema='fm-boat-history.v1', source=str(work), head=head,
+                            head_ref='refs/heads/feature-input', refs={'refs/remotes/origin/main':
+                            {'ref': 'refs/heads/main-input', 'oid': main}}, depth=2, objects=[], templates=[])
+            path = p / 'history.json'
+            path.write_text(json.dumps(manifest))
+            options = ('--history-depth', '2') if mode == 'depth' else ('--history-input', str(path))
+            refused = launch(p, env, options=options)
+            assert refused.returncode == 2 and b'merge ancestry incomplete' in refused.stderr, refused.stderr
+            assert not (state / 'calls.jsonl').exists()
+            assert not (p / 'output/upload/source.tar.gz').exists()
+            manifest['depth'] = 3
+            path.write_text(json.dumps(manifest))
+            options = ('--history-depth', '3') if mode == 'depth' else ('--history-input', str(path))
+            check = f"""import pathlib,subprocess
+subprocess.run(['git','clone','--quiet','--shared','--no-checkout','.', '../copy'],check=True)
+def git(*args): return subprocess.check_output(['git','-C','../copy',*args]).decode().strip()
+assert git('merge-base','--all',{head!r},{main!r}) == {b!r}
+git('checkout','--quiet','--detach',{head!r})
+git('-c','user.name=Fixture','-c','user.email=fixture@example.invalid','merge','--quiet','--no-ff','--no-edit',{main!r})
+assert pathlib.Path('../copy/tracked.txt').read_text() == 'committed\\n'
+assert git('fsck','--full','--no-reflogs') == ''
+"""
+            completed = next_run(p, env, 'python3 -c ' + shlex.quote(check), options)
+            assert completed.returncode == 0, (completed.stdout, completed.stderr, result(p))
+            assert result(p)['history'] == 'screened'
+            empty(state)
+    print('ok - concealed merge ancestors refuse before provider calls; sufficient depth preserves merges in both directions and modes')
+
+
+def history_screening_cases():
+    for mode in ('depth', 'input'):
+        for kind in ('commit', 'symlink'):
+            for base_only in (False, True):
+                p, state, env = case('screen-refusal-' + mode + '-' + kind + '-' + str(base_only), clean_history=True)
+                work = p / 'work'
+                start = git(work, 'rev-parse', 'HEAD').stdout.decode().strip()
+                if kind == 'symlink':
+                    (work / 'unsafe-link').symlink_to('../API_SECRET=history-never-print')
+                    git(work, 'add', 'unsafe-link')
+                git(work, 'commit', '-q', '--allow-empty', '-m',
+                    'API_SECRET=history-never-print' if kind == 'commit' else 'unsafe historical link')
+                unsafe = git(work, 'rev-parse', 'HEAD').stdout.decode().strip()
+                if kind == 'symlink':
+                    (work / 'unsafe-link').unlink()
+                    git(work, 'add', '--all')
+                git(work, 'commit', '-q', '--allow-empty', '-m', 'clean descendant')
+                main = git(work, 'rev-parse', 'HEAD').stdout.decode().strip()
+                git(work, 'branch', 'main-input', main)
+                if base_only:
+                    git(work, 'reset', '--hard', start)
+                head = git(work, 'rev-parse', 'HEAD').stdout.decode().strip()
+                git(work, 'branch', 'feature-input', head)
+                git(work, 'update-ref', 'refs/remotes/origin/main', main)
+                path = p / 'history.json'
+                path.write_text(json.dumps(dict(schema='fm-boat-history.v1', source=str(work), head=head,
+                    head_ref='refs/heads/feature-input', refs={'refs/remotes/origin/main':
+                    {'ref': 'refs/heads/main-input', 'oid': main}}, depth=3, objects=[], templates=[])))
+                options = ('--history-depth', '3') if mode == 'depth' else ('--history-input', str(path))
+                refused = launch(p, env, options=options)
+                assert refused.returncode == 2, refused.stderr
+                assert not (state / 'calls.jsonl').exists()
+                assert not (p / 'output/upload/source.tar.gz').exists()
+                evidence = json.loads((p / 'output/upload/history-exclusions.json').read_text())
+                assert any(item['commit'] == unsafe and item['rule'] ==
+                           ('commit-content' if kind == 'commit' else 'symlink-target') for item in evidence['objects'])
+                assert b'history-never-print' not in refused.stdout + refused.stderr + (p / 'output/result.json').read_bytes()
+                assert 'history-never-print' not in json.dumps(evidence)
+    for history_mode in (False, True):
+        p, state, env = case('screen-preserved-link-' + str(history_mode), clean_history=True)
+        work = p / 'work'
+        (work / 'safe-link').symlink_to('tracked.txt')
+        git(work, 'add', 'safe-link')
+        git(work, 'commit', '-qm', 'safe link')
+        git(work, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
+        options = ('--history-depth', '2') if history_mode else ()
+        completed = launch(p, env, 'test -L safe-link && test "$(readlink safe-link)" = tracked.txt && test -f safe-link', options)
+        assert completed.returncode == 0, completed.stderr
+        assert result(p)['history'] == ('screened' if history_mode else 'synthetic')
+        empty(state)
+    print('ok - both history modes refuse unsafe ancestors on either root before provider calls; default synthetic mode and admitted links survive')
+
+
+if '--history-screening' in sys.argv:
+    history_screening_cases()
+    merge_ancestry_cases()
+    sys.exit(0)
+history_screening_cases()
+
+
+merge_ancestry_cases()
+if '--merge-ancestry' in sys.argv:
+    sys.exit(0)
+
+
+copy_completeness_cases()
+if '--copy-completeness' in sys.argv:
+    sys.exit(0)
+
 if sys.platform.startswith('linux'):
     sentinel = subprocess.Popen(['sleep', '90'])
     try:
@@ -1525,6 +1754,10 @@ for history_mode in (False, True):
         if label == 'directory-chain':
             (work / 'directory-link').symlink_to('.agents/skills')
         git(work, 'add', '--force', '.')
+        if history_mode:
+            # Selected history must be complete, so refused targets stay unselected.
+            git(work, 'rm', '--cached', '--', '.env.fixture', '.claude/settings.json',
+                'filtered-dir/.env.fixture', 'account-material.txt')
         git(work, 'commit', '-qm', 'symlink fixture')
         (work / 'untracked-target.txt').write_text('host file outside selection\n')
         if label == 'deleted-link':
@@ -1550,7 +1783,7 @@ for history_mode in (False, True):
                 skill_path = selected
             check += ' && test -f ' + shlex.quote(skill_path)
         r = launch(p, env, check, options)
-        assert r.returncode == (0 if accepted or history_mode else 2), (history_mode, label, r.stdout, r.stderr)
+        assert r.returncode == (0 if accepted else 2), (history_mode, label, r.stdout, r.stderr)
         assert b'symlink-never-print' not in r.stdout + r.stderr
         if accepted:
             uploaded = json.loads((state / 'uploaded.json').read_text())
@@ -1567,14 +1800,9 @@ for history_mode in (False, True):
                 assert 'account-material.txt' not in archive.getnames()
                 assert ('untracked-target.txt' in archive.getnames()) == (label == 'explicit-target')
             empty(state)
-        elif history_mode:
-            assert result(p)['history'] == 'fallback-synthetic'
-            assert selected in result(p)['history_reason']
-            with tarfile.open(p / 'output/upload/source.tar.gz') as archive:
-                assert not any(n == '.git' or n.startswith('.git/') for n in archive.getnames())
-            empty(state)
         else:
             assert not (state / 'calls.jsonl').exists()
+            assert not (p / 'output/upload/source.tar.gz').exists()
     for label in ('submodule', 'parent-component'):
         p, state, env = case('unsafe-entry-' + str(history_mode) + '-' + label, clean_history=True)
         work = p / 'work'
@@ -1596,9 +1824,9 @@ for history_mode in (False, True):
         git(work, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
         r = launch(p, env, options=('--history-depth', '2') if history_mode else ())
         if history_mode and label == 'submodule':
-            assert r.returncode == 0, r.stderr
-            assert b'history withheld' in r.stderr
-            empty(state)
+            assert r.returncode == 2, r.stderr
+            assert b'history closure incomplete' in r.stderr
+            assert not (state / 'calls.jsonl').exists()
         else:
             assert r.returncode == 2, (history_mode, label, r.stderr)
             assert not (state / 'calls.jsonl').exists()
@@ -1878,7 +2106,7 @@ assert git('rev-parse','HEAD') == head_tip
 assert git('rev-parse','origin/main') == base_tip
 assert git('rev-list','--count','--all') == '3'
 assert subprocess.run(['git','cat-file','-e',old],capture_output=True).returncode != 0
-assert set(git('for-each-ref','--format=%(refname)').splitlines()) == {'refs/heads/fm-boat-test','refs/remotes/origin/main'}
+assert set(git('for-each-ref','--format=%(refname)').splitlines()) == {'refs/heads/fm-boat-test','refs/remotes/origin/main','refs/heads/fm-boat-ref-' + base_tip}
 assert git('remote') == ''
 assert not pathlib.Path('.git/logs').exists()
 assert not pathlib.Path('.git/objects/info/alternates').exists()
@@ -1961,12 +2189,12 @@ with tarfile.open(p / 'output/upload/source.tar.gz') as archive:
 empty(state)
 print('ok - pinned exact snapshot beyond 1000 preserves source bytes and blank template through real shallow clone')
 
-# The same excluded template and deep object remain unavailable without opt-in.
+# Reviewed root templates are also admitted in ordinary depth mode.
 git(work, 'update-ref', 'refs/remotes/origin/main', parent)
 r = next_run(p, env, options=('--history-depth', '1'))
 assert r.returncode == 0, r.stderr
 with tarfile.open(p / 'output/upload/source.tar.gz') as archive:
-    assert '.env.example' not in archive.getnames()
+    assert '.env.example' in archive.getnames()
 
 # The selected old commit must still pass the ordinary commit/content guards.
 value['objects'][0]['commit'] = unsafe
@@ -2154,27 +2382,21 @@ for name, selected, contents, symlink, accepted in [
         git(work, 'add', '--all')
         git(work, 'commit', '-qm', 'clean current tree')
     git(work, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
-    refused = symlink and selected == '.claude/skills' and not accepted
-    oid = git(work, 'rev-parse', 'HEAD~1:' + selected).stdout.decode().strip() if not accepted else None
-    check = 'test ! -e .git' if refused else 'exit 0'
-    if not accepted and not refused:
-        check = 'git fsck --no-reflogs && ! git cat-file blob ' + oid + ' >/dev/null 2>&1'
+    check = 'exit 0'
     if symlink and accepted:
         check = ('test -L ' if name == 'history-other-link' else 'test ! -L ') + shlex.quote(selected) + ' && test "$(git cat-file blob HEAD:' + \
                 selected + ')" = ' + shlex.quote(contents) + ' && git fsck --no-reflogs'
     r = launch(p, env, check, ('--history-depth', '2'))
-    assert r.returncode == 0, (name, r.stdout, r.stderr)
     assert b'historical-value-never-print' not in r.stdout + r.stderr
+    if not accepted:
+        assert r.returncode == 2, (name, r.stderr)
+        assert not (state / 'calls.jsonl').exists()
+        assert not (p / 'output/upload/source.tar.gz').exists()
+        continue
+    assert r.returncode == 0, (name, r.stdout, r.stderr)
     uploaded = json.loads((state / 'uploaded.json').read_text())
     assert (selected in uploaded) == (accepted and (not symlink or name == 'history-other-link')), (name, uploaded)
-    if refused:
-        assert r.stderr.count(b'falling back to synthetic snapshot; history refused:') == 1
-        assert result(p)['history'] == 'fallback-synthetic'
-        assert selected in result(p)['history_reason']
-        with tarfile.open(p / 'output/upload/source.tar.gz') as archive:
-            assert not any(n == '.git' or n.startswith('.git/') for n in archive.getnames())
-    else:
-        assert result(p)['history'] == 'screened'
+    assert result(p)['history'] == 'screened'
     empty(state)
 print('ok - Claude history screens reimage content and permits screened in-repo symlink blobs')
 
@@ -2214,25 +2436,50 @@ for name, unsafe_path, unsafe_content in [
     git(work, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
     head = git(work, 'rev-parse', 'HEAD').stdout.decode().strip()
     older = git(work, 'rev-parse', 'HEAD~1').stdout.decode().strip()
-    check = f'''import pathlib, subprocess
-def git(*args): return subprocess.run(['git', *args], capture_output=True, text=True)
-assert git('rev-parse', 'HEAD').stdout.strip() == {head!r}
-assert git('cat-file', '-e', {older!r}).returncode == 0, 'the older commit must still be here'
-assert git('fsck', '--no-reflogs').stdout.strip() == ''
-assert git('fsck', '--no-reflogs').returncode == 0
-read = git('cat-file', 'blob', {oid!r})
-assert read.returncode != 0, 'a withheld object must not be readable'
-assert 'never-print' not in read.stdout
-assert not pathlib.Path({unsafe_path!r}).exists()
-'''
-    r = launch(p, env, 'python3 -c ' + shlex.quote(check), ('--history-depth', '2'))
-    assert r.returncode == 0, (name, r.stdout, r.stderr, result(p))
-    assert b'history withheld' in r.stderr, (name, r.stderr)
+    r = launch(p, env, options=('--history-depth', '2'))
+    assert r.returncode == 2, (name, r.stdout, r.stderr, result(p))
+    assert b'history closure incomplete' in r.stderr, (name, r.stderr)
     assert b'never-print' not in r.stdout + r.stderr, name
-    assert result(p)['kind'] == 'completed'
-    empty(state)
-print('ok - an excluded, credential-bearing or binary historical object is withheld '
-      'without content, leaving real commits a clean fsck reads')
+    assert not (state / 'calls.jsonl').exists()
+    assert not (p / 'output/upload/source.tar.gz').exists()
+    evidence = json.loads((p / 'output/upload/history-exclusions.json').read_text())
+    assert any(item['oid'] == oid and item['path'] == unsafe_path and item['commit'] == older
+               for item in evidence['objects']), evidence
+    assert all(set(item) == {'oid', 'path', 'commit', 'rule'} for item in evidence['objects'])
+    assert 'never-print' not in json.dumps(evidence)
+print('ok - excluded, credential-bearing and binary historical objects refuse locally with content-free evidence')
+
+for history in (False, True):
+    for edited in (False, True):
+        p, state, env = case('template-working-tree-' + str(history) + '-' + str(edited),
+                             clean_history=history)
+        work = p / 'work'
+        unsafe = 'UNKNOWN_SECRET=never-print-rejected\n'
+        (work / '.env.example').write_text('API_TOKEN=\n' if edited else unsafe)
+        git(work, 'add', '-f', '.env.example')
+        git(work, 'commit', '-qm', 'template')
+        head = git(work, 'rev-parse', 'HEAD').stdout.decode().strip()
+        git(work, 'update-ref', 'refs/remotes/origin/main', head)
+        (work / '.env.example').write_text(unsafe)
+        oid = subprocess.run(['git', 'hash-object', '--stdin'], input=unsafe.encode(),
+                             capture_output=True, check=True).stdout.decode().strip()
+        r = launch(p, env, options=('--history-depth', '1') if history else ())
+        if history:
+            assert r.returncode == 2, (edited, r.stderr)
+            assert b'history input template refused: .env.example' in r.stderr, r.stderr
+            assert not (state / 'calls.jsonl').exists()
+        else:
+            assert r.returncode == 0, (edited, r.stderr)
+            assert b'excluded screened template that failed review: .env.example' in r.stderr, r.stderr
+            assert b'history' not in r.stderr, r.stderr
+            assert '.env.example' not in json.loads((state / 'uploaded.json').read_text())
+            empty(state)
+        assert b'never-print-rejected' not in r.stdout + r.stderr
+        evidence = json.loads((p / 'output/upload/history-exclusions.json').read_text())
+        assert evidence['objects'] == [{'oid': oid, 'path': '.env.example', 'rule': 'template-content',
+                                        'commit': '' if edited else head}], evidence
+        assert 'never-print-rejected' not in json.dumps(evidence)
+print('ok - a failing template is excluded in synthetic runs, refuses selected history, and names its commit only when it holds the bytes')
 
 p, state, env = case('history-current-blob', clean_history=True)
 work = p / 'work'
@@ -2260,19 +2507,13 @@ for name, path, content in (
     git(work, 'commit', '-qm', 'credential-looking screened exception in HEAD')
     git(work, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
     oid = git(work, 'rev-parse', 'HEAD:' + path).stdout.decode().strip()
-    check = f'''import pathlib, subprocess
-read = subprocess.run(['git', 'cat-file', 'blob', {oid!r}], capture_output=True, text=True)
-assert read.returncode != 0, 'a screened exception that fails its screen must not travel in history'
-assert 'never-print' not in read.stdout
-assert not pathlib.Path({path!r}).exists()
-'''
-    r = launch(p, env, 'python3 -c ' + shlex.quote(check), ('--history-depth', '2'))
-    assert r.returncode == 0, (name, r.stdout, r.stderr, result(p))
-    assert b'history withheld' in r.stderr, (name, r.stderr)
+    r = launch(p, env, options=('--history-depth', '2'))
+    assert r.returncode == 2, (name, r.stdout, r.stderr, result(p))
+    assert b'history closure incomplete' in r.stderr, (name, r.stderr)
     assert b'never-print' not in r.stdout + r.stderr, name
     assert b'never-print' not in (p / 'output/result.json').read_bytes(), name
-    empty(state)
-print('ok - a screened exception HEAD carries is withheld from history when its content fails the screen')
+    assert not (state / 'calls.jsonl').exists()
+print('ok - a screened exception HEAD carries refuses locally from history when its content fails the screen')
 
 for name, path, change in (
     ('history-head-edited', 'ordinary.txt', 'edit'),
@@ -2291,18 +2532,13 @@ for name, path, change in (
         (work / path).write_text('cleaned in the working tree\n')
     elif change == 'delete':
         (work / path).unlink()
-    check = f'''import subprocess
-read = subprocess.run(['git', 'cat-file', 'blob', {oid!r}], capture_output=True, text=True)
-assert read.returncode != 0, 'HEAD bytes the source archive does not carry must be screened'
-assert 'never-print' not in read.stdout
-'''
-    r = launch(p, env, 'python3 -c ' + shlex.quote(check), ('--history-depth', '2'))
-    assert r.returncode == 0, (name, r.stdout, r.stderr, result(p))
-    assert b'history withheld' in r.stderr, (name, r.stderr)
+    r = launch(p, env, options=('--history-depth', '2'))
+    assert r.returncode == 2, (name, r.stdout, r.stderr, result(p))
+    assert b'history closure incomplete' in r.stderr, (name, r.stderr)
     assert b'never-print' not in r.stdout + r.stderr, name
     assert b'never-print' not in (p / 'output/result.json').read_bytes(), name
-    empty(state)
-print('ok - a HEAD blob the working tree edits, deletes or excludes is screened and withheld')
+    assert not (state / 'calls.jsonl').exists()
+print('ok - a HEAD blob the working tree edits, deletes or excludes is screened and refused locally')
 
 p, state, env = case('history-base-only-blob', clean_history=True)
 work = p / 'work'
@@ -2316,16 +2552,12 @@ git(work, 'reset', '-q', '--hard', start)
 (work / 'other.txt').write_text('head side\n')
 git(work, 'add', '--all')
 git(work, 'commit', '-qm', 'head side')
-check = f'''import subprocess
-read = subprocess.run(['git', 'cat-file', 'blob', {oid!r}], capture_output=True, text=True)
-assert read.returncode != 0, 'a blob only origin/main carries is screened like history'
-'''
-r = launch(p, env, 'python3 -c ' + shlex.quote(check), ('--history-depth', '2'))
-assert r.returncode == 0, (r.stdout, r.stderr, result(p))
-assert b'history withheld' in r.stderr, r.stderr
+r = launch(p, env, options=('--history-depth', '2'))
+assert r.returncode == 2, (r.stdout, r.stderr, result(p))
+assert b'history closure incomplete' in r.stderr, r.stderr
 assert b'never-print' not in r.stdout + r.stderr
-empty(state)
-print('ok - a credential-looking blob only origin/main carries is withheld')
+assert not (state / 'calls.jsonl').exists()
+print('ok - a credential-looking blob only origin/main carries refuses locally')
 
 for root_ref in ('HEAD', 'refs/remotes/origin/main'):
     for ancestor in (False, True):
@@ -2350,16 +2582,16 @@ for root_ref in ('HEAD', 'refs/remotes/origin/main'):
                     tree = git(work, 'rev-parse', 'HEAD^{tree}').stdout.decode().strip()
                     tip = git(work, 'commit-tree', tree, '-p', unsafe, '-m', 'clean descendant').stdout.decode().strip()
                 git(work, 'update-ref', root_ref, tip)
-                r = launch(p, env, 'test ! -e .git', options=('--history-depth', '2'))
-                assert r.returncode == 0, (name, r.stderr)
-                assert r.stderr.count(b'falling back to synthetic snapshot; history refused:') == 1
-                assert credential not in r.stdout + r.stderr
-                assert result(p)['history'] == 'fallback-synthetic'
-                assert unsafe in result(p)['history_reason']
-                with tarfile.open(p / 'output/upload/source.tar.gz') as archive:
-                    assert not any(n == '.git' or n.startswith('.git/') for n in archive.getnames())
-                empty(state)
-print('ok - both history roots screen tip and ancestor commit messages and headers, then fall back without content')
+                r = launch(p, env, options=('--history-depth', '2'))
+                assert r.returncode == 2, (name, r.stderr)
+                assert credential not in r.stdout + r.stderr + (p / 'output/result.json').read_bytes()
+                assert not (state / 'calls.jsonl').exists()
+                assert not (p / 'output/upload/source.tar.gz').exists()
+                evidence = json.loads((p / 'output/upload/history-exclusions.json').read_text())
+                assert any(item['oid'] == unsafe and item['commit'] == unsafe and
+                           item['rule'] == 'commit-content' for item in evidence['objects'])
+                assert credential.decode() not in json.dumps(evidence)
+print('ok - both history roots refuse tip and ancestor commit messages and headers before provider calls without content')
 
 p, state, env = case('history-commit-prose', clean_history=True)
 work = p / 'work'
@@ -2376,7 +2608,7 @@ r = launch(p, env, options=('--history-depth', '2'))
 assert r.returncode == 2 and b'origin/main' in r.stderr
 assert not (state / 'calls.jsonl').exists()
 for depth in ('0', '-1', '1001', 'not-a-number'):
-    p, state, env = case('history-depth-' + depth)
+    p, state, env = case('history-depth-' + depth, clean_history=True)
     assert launch(p, env, options=('--history-depth', depth)).returncode == 2
     assert not (state / 'calls.jsonl').exists()
 print('ok - history depth and required base fail closed')

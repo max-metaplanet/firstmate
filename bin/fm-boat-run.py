@@ -32,10 +32,6 @@ class Failure(Exception):
         self.code = code
 
 
-class HistoryScreenRefusal(Failure):
-    pass
-
-
 class UploadRejected(Failure):
     pass
 
@@ -436,12 +432,37 @@ def excluded(name, artifact=False):
                part.lower().endswith(('.pem', '.key', '.p12', '.pfx')) for part in parts)
 
 
-PROMISOR = 'fm-boat-withheld'
 SOURCE_ALLOWLIST = {'.npmrc', '.claude/settings.json', '.claude/settings.local.json',
                     '.claude/settings.example.json',
                     '.claude/commands/reimage-dev.md',
                     '.github/tools/jev/vendor/.claude/agents/security-compliance.md',
                     '.github/tools/jev/vendor/.claude/agents/release-engineer.md'}
+REVIEWED_TEMPLATES = {
+    '.env.example': {},
+    'apps/planetgear/.env.example': {
+        'COMPANY_NAME': '"Vercel Inc."',
+        'SITE_NAME': '"Next.js Commerce"',
+        'SHOPIFY_STORE_DOMAIN': '"[your-shopify-store-subdomain].myshopify.com"',
+        'MAIL_API_URL': 'https://metaplanet.jp',
+        'REQUIRE_SECRET_IN_DEV': 'false',
+        'SHOP_BASE_CURRENCY': 'JPY',
+        'USE_IN_MEMORY_TRACKER': 'false',
+        'VERBOSE_CART_DISCOUNT_DEBUG': 'false',
+        'SERVER_LOG_LEVEL': 'INFO',
+        'SERVER_LOG_FORMAT': 'human',
+        'NEXT_PUBLIC_CLIENT_LOG_ENABLED': 'false',
+        'NEXT_PUBLIC_CLIENT_LOG_LEVEL': 'INFO',
+        'NEXT_PUBLIC_CLIENT_LOG_FORMAT': 'human',
+        'NEXT_PUBLIC_DEBUG_AUTO_LOG': 'false',
+        'NEXT_PUBLIC_DEBUG_LOG_INTERVAL': '5000',
+    },
+}
+REVIEWED_TEMPLATE_COMMENTS = {
+    'apps/planetgear/.env.example': {
+        '# bearer token, which core answers 401. Use the origin directly.',
+        '# Debug log API secret (required for POST and GET requests to /api/debug-logs, passed as ?secret=)',
+    },
+}
 # A credential nobody writes by accident: a private-key block, or a key in the
 # issued form its provider prints. These say credential whatever surrounds them.
 _CREDENTIAL_ISSUED = (
@@ -559,19 +580,27 @@ def template_path(name):
             not excluded(str(path.parent)) and str(path.parent) != '.git')
 
 
-def safe_template(data):
+def safe_template(data, name=''):
     try:
         lines = data.decode('utf-8').splitlines()
     except UnicodeDecodeError:
         return False
     for line in lines:
         if not line.strip() or line.lstrip().startswith('#'):
-            if not safe_text(line.encode(), CREDENTIAL_CONTENT):
+            if (line.strip() not in REVIEWED_TEMPLATE_COMMENTS.get(name, ()) and
+                    not safe_text(line.encode(), CREDENTIAL_CONTENT)):
                 return False
             continue
-        match = re.fullmatch(r"[ \t]*(?:export[ \t]+)?[A-Za-z_][A-Za-z0-9_]*="
-                             r"[ \t]*(?:''|\"\")?[ \t]*(#.*)?", line)
-        if not match or not safe_text((match[1] or '').encode(), CREDENTIAL_CONTENT):
+        match = re.fullmatch(r"[ \t]*(?:export[ \t]+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)", line)
+        if not match:
+            return False
+        value = match[2].strip()
+        empty = re.fullmatch(r"(?:''|\"\")?[ \t]*(#.*)?", value)
+        if empty:
+            if not safe_text((empty[1] or '').encode(), CREDENTIAL_CONTENT):
+                return False
+        elif (REVIEWED_TEMPLATES.get(name, {}).get(match[1]) != value or
+              not safe_text(value.encode(), CREDENTIAL_CONTENT)):
             return False
     return b'\x00' not in data
 
@@ -653,7 +682,8 @@ def fetch_history(fetched, root, head, base, depth, inputs):
     if inputs is None:
         git(fetched, '-c', 'protocol.file.allow=always', 'fetch', '--quiet', '--no-tags',
             '--no-write-fetch-head', '--depth=' + str(depth), root.as_uri(), head, base)
-        return {'refs/heads/fm-boat-test': head, 'refs/remotes/origin/main': base}
+        return {'refs/heads/fm-boat-test': head, 'refs/remotes/origin/main': base,
+                'refs/heads/fm-boat-ref-' + base: base}
     refs = {'refs/heads/fm-boat-test': {'ref': inputs.head_ref, 'oid': head}, **inputs.refs}
     try:
         # Fetch named refs, then compare their received identities to detect a
@@ -694,6 +724,9 @@ def fetch_history(fetched, root, head, base, depth, inputs):
 
 
 def history(root, head, depth, destination, key_files, uploaded, handled_links, inputs=None):
+    manifest = destination.parent / 'history-exclusions.json'
+    exclusions = []
+    save(manifest, {'schema': 'fm-boat-exclusions.v1', 'objects': exclusions})
     try:
         base = (inputs.refs['refs/remotes/origin/main']['oid'] if inputs else
                 git(root, 'rev-parse', '--verify', 'refs/remotes/origin/main^{commit}').decode().strip())
@@ -706,19 +739,39 @@ def history(root, head, depth, destination, key_files, uploaded, handled_links, 
     object_format = git(root, 'rev-parse', '--show-object-format').decode().strip()
     for repo in (fetched, exported):
         git(repo, 'init', '--quiet', '--template=', '--object-format=' + object_format)
-    refs = fetch_history(fetched, root, head, base, depth, inputs)
+    try:
+        refs = fetch_history(fetched, root, head, base, depth, inputs)
+    except subprocess.SubprocessError as exc:
+        raise Failure('history source unavailable or incomplete; no lazy hydration or fallback', 2) from exc
     for target, oid in refs.items():
         git(fetched, 'update-ref', target, oid)
     git(fetched, 'symbolic-ref', 'HEAD', 'refs/heads/fm-boat-test')
-    templates = inputs.templates if inputs else frozenset()
+    shallow = fetched / '.git/shallow'
+    if shallow.exists():
+        selected = set(git(fetched, 'rev-list', '--all').splitlines())
+        boundaries = []
+        for commit in shallow.read_bytes().splitlines():
+            headers = git(fetched, 'cat-file', 'commit', commit.decode()).split(b'\n\n', 1)[0]
+            parents = [line[7:] for line in headers.splitlines() if line.startswith(b'parent ')]
+            # Separate depth-limited tips can already supply each other's parents.
+            if any(parent not in selected for parent in parents):
+                boundaries.append(commit)
+        if boundaries:
+            shallow.write_bytes(b'\n'.join(boundaries) + b'\n')
+        else:
+            shallow.unlink()
+    try:
+        git(fetched, 'fsck', '--full', '--no-reflogs')
+    except subprocess.SubprocessError as exc:
+        raise Failure('history closure or merge ancestry incomplete; supply complete source and sufficient depth', 2) from exc
+    templates = REVIEWED_TEMPLATES.keys() | (inputs.templates if inputs else frozenset())
     scanned = {}
-    kept = set()
     withheld = set()
-    withheld_names = {}
-    screened = []
     for commit in git(fetched, 'rev-list', '--all').splitlines():
         if not safe_text(git(fetched, 'cat-file', 'commit', commit.decode()), CREDENTIAL_COMMIT):
-            raise HistoryScreenRefusal('history refused: credential-looking or binary commit: ' +
+            exclusions.append(dict(oid=commit.decode(), path='', commit=commit.decode(), rule='commit-content'))
+            save(manifest, {'schema': 'fm-boat-exclusions.v1', 'objects': exclusions})
+            raise Failure('history refused: credential-looking or binary commit: ' +
                                        commit.decode(), 2)
         entries = git(fetched, 'ls-tree', '-rz', '--full-tree', commit.decode()).split(b'\0')
         for entry in filter(None, entries):
@@ -731,70 +784,59 @@ def history(root, head, depth, destination, key_files, uploaded, handled_links, 
                     skip_symlink(name, git(fetched, 'cat-file', 'blob', oid.decode()),
                                  handled_links, 'history refused: ')
                 except Failure as exc:
-                    raise HistoryScreenRefusal(str(exc), exc.code) from exc
+                    exclusions.append(dict(oid=oid.decode(), path=name, commit=commit.decode(), rule='symlink-target'))
+                    save(manifest, {'schema': 'fm-boat-exclusions.v1', 'objects': exclusions})
+                    raise Failure(str(exc), exc.code) from exc
                 # The pack retains screened target text, never dereferenced content.
-                kept.add(oid)
                 continue
-            # A withheld object keeps its tree entry, so every commit keeps the
-            # identity the project's own tooling reads, while its content stays
-            # out of the upload.
-            if ((excluded(name) and name not in SOURCE_ALLOWLIST and name not in templates) or
-                    (root / name).resolve() in key_files or
-                    kind != b'blob' or mode not in (b'100644', b'100755')):
+            # Never rewrite a selected tree to hide a refused object.
+            rule = ('configured-key' if (root / name).resolve() in key_files else
+                    'excluded-path' if excluded(name) and name not in SOURCE_ALLOWLIST and name not in templates else
+                    'unsupported-object' if kind != b'blob' or mode not in (b'100644', b'100755') else None)
+            if rule:
                 withheld.add(oid)
-                withheld_names[oid] = name
+                exclusions.append(dict(oid=oid.decode(), path=name, commit=commit.decode(), rule=rule))
                 continue
             # Bytes the source archive already carries leave this machine anyway.
             if oid in uploaded and name not in templates:
-                kept.add(oid)
                 continue
             # .npmrc has an additional content rule, even for a reused blob.
-            scan_key = (oid, name == '.npmrc', name in templates)
+            scan_key = (oid, name)
             if scan_key not in scanned:
                 data = git(fetched, 'cat-file', 'blob', oid.decode())
-                scanned[scan_key] = (safe_template(data) if name in templates else
+                scanned[scan_key] = (safe_template(data, name) if name in templates else
                                      safe_allowlisted(name, data))
-                if not scanned[scan_key]:
-                    screened.append(name)
-            if scanned[scan_key]:
-                kept.add(oid)
-            else:
+            if not scanned[scan_key]:
                 withheld.add(oid)
-                withheld_names[oid] = name
-    # Content a withheld path shares with an uploaded one is already eligible.
-    withheld -= kept
-    if withheld and inputs:
-        raise HistoryScreenRefusal('history input refused: selected snapshots contain %d excluded, '
-                                   'credential-looking or unsupported object(s); first path: %s' %
-                                   (len(withheld), withheld_names[sorted(withheld)[0]]), 2)
+                exclusions.append(dict(oid=oid.decode(), path=name, commit=commit.decode(),
+                                       rule='template-content' if name in templates else 'credential-or-binary'))
+    save(manifest, {'schema': 'fm-boat-exclusions.v1', 'objects': exclusions})
     if withheld:
-        print('boat-offload: history withheld %d object(s) from the upload, %d of them '
-              'screened historical blobs%s' %
-              (len(withheld), len(screened),
-               '; first ' + screened[0] if screened else ''), file=sys.stderr)
+        raise Failure('history closure incomplete: %d excluded object(s); see history-exclusions.json; first path: %s' %
+                      (len(withheld), exclusions[0]['path']), 2)
+    try:
+        merge_bases = git(fetched, 'merge-base', '--all', head, base).decode().splitlines()
+        if shallow.exists():
+            divergent = set(git(fetched, 'rev-list', head, base, '--not', *merge_bases).splitlines())
+            if divergent.intersection(shallow.read_bytes().splitlines()):
+                raise Failure('history merge ancestry incomplete; increase depth or supply complete source', 2)
+    except subprocess.SubprocessError as exc:
+        raise Failure('history merge ancestry incomplete; increase depth or supply complete source', 2) from exc
     objects = set(git(fetched, 'rev-list', '--objects', '--no-object-names', '--all').splitlines())
     # Explicit object IDs avoid exporting any extra objects the transport may
     # have sent. pack-objects without --revs never follows shallow parents.
-    pack = git(fetched, 'pack-objects', str(exported / '.git/objects/pack/screened'),
-               input=b'\n'.join(sorted(objects - withheld)) + b'\n').decode().strip()
-    if withheld:
-        # Git's own partial-clone marking, as `clone --filter=blob:none` writes
-        # it: the pack declares the absent objects promised, so every ordinary
-        # ref, ancestry, name and date query works and `fsck` stays clean,
-        # while a read of a withheld object's content fails loudly against a
-        # promisor remote that carries no URL to reach. The promisor remote is
-        # named for what it is rather than `origin`, so nothing can mistake it
-        # for the project's own remote.
-        (exported / '.git/objects/pack' / ('screened-' + pack + '.promisor')).write_bytes(b'')
-        git(exported, 'config', 'core.repositoryformatversion', '1')
-        git(exported, 'config', 'extensions.partialclone', PROMISOR)
-        git(exported, 'config', 'remote.' + PROMISOR + '.promisor', 'true')
+    git(fetched, 'pack-objects', str(exported / '.git/objects/pack/screened'),
+        input=b'\n'.join(sorted(objects)) + b'\n')
     if (fetched / '.git/shallow').exists():
         shutil.copyfile(fetched / '.git/shallow', exported / '.git/shallow')
     for target, oid in refs.items():
         git(exported, 'update-ref', target, oid)
     git(exported, 'symbolic-ref', 'HEAD', 'refs/heads/fm-boat-test')
     git(exported, 'read-tree', head)
+    try:
+        git(exported, 'fsck', '--full', '--no-reflogs')
+    except subprocess.SubprocessError as exc:
+        raise Failure('history exported object closure incomplete', 2) from exc
     shutil.rmtree(exported / '.git/logs', ignore_errors=True)
     return exported / '.git'
 
@@ -802,7 +844,7 @@ def history(root, head, depth, destination, key_files, uploaded, handled_links, 
 def source(root, inputs, archive, key_files, history_depth=None, history_manifest=None):
     head = git(root, 'rev-parse', 'HEAD').decode().strip()
     context = history_input(history_manifest, root, head) if history_manifest else None
-    templates = context.templates if context else frozenset()
+    templates = REVIEWED_TEMPLATES.keys() | (context.templates if context else frozenset())
     if context:
         history_depth = context.depth
     entries = git(root, 'ls-tree', '-rz', '--full-tree', 'HEAD').split(b'\0')
@@ -873,8 +915,9 @@ class _Hashing:
 
 def archive_source(root, names, links, archive, history_depth, key_files, head, object_format, handled_links, context):
     uploaded = set()
+    refused = []
     history_result = {'history': 'synthetic'}
-    templates = context.templates if context else frozenset()
+    templates = REVIEWED_TEMPLATES.keys() | (context.templates if context else frozenset())
     if context:
         history_result['history_input'] = dict(sha256=context.sha256, source=context.source,
                                                head=head, head_ref=context.head_ref,
@@ -897,8 +940,18 @@ def archive_source(root, names, links, archive, history_depth, key_files, head, 
                 raise Failure('source input must be a regular file: ' + name, 2)
             if name in SOURCE_ALLOWLIST or name in templates:
                 data = path.read_bytes()
-                if name in templates and not safe_template(data):
-                    raise Failure('history input template refused: ' + name, 2)
+                if name in templates and not safe_template(data, name):
+                    blob = git(root, 'hash-object', '--stdin', input=data).decode().strip()
+                    committed = git(root, 'ls-tree', head, '--', name).split()
+                    refused.append(dict(oid=blob, path=name, rule='template-content',
+                                        commit=head if committed[2:3] == [blob.encode()] else ''))
+                    save(archive.parent / 'history-exclusions.json',
+                         {'schema': 'fm-boat-exclusions.v1', 'objects': refused})
+                    if history_depth is not None:
+                        raise Failure('history input template refused: ' + name, 2)
+                    print('boat-offload: excluded screened template that failed review: ' + name,
+                          file=sys.stderr)
+                    continue
                 if name not in templates and not safe_allowlisted(name, data):
                     print('boat-offload: excluded allowlisted file with credential-looking content: ' +
                           name, file=sys.stderr)
@@ -941,16 +994,9 @@ def archive_source(root, names, links, archive, history_depth, key_files, head, 
             handled_links.add(name)
         if history_depth is not None:
             scratch = stack.enter_context(tempfile.TemporaryDirectory(dir=archive.parent, prefix='history-'))
-            try:
-                history_git = history(root, head, history_depth, Path(scratch), key_files, uploaded, handled_links, context)
-            except HistoryScreenRefusal as exc:
-                if context:
-                    raise
-                history_result.update(history='fallback-synthetic', history_reason=str(exc))
-                print('boat-offload: falling back to synthetic snapshot; ' + str(exc), file=sys.stderr)
-            else:
-                output.add(history_git, arcname='.git')
-                history_result['history'] = 'screened'
+            history_git = history(root, head, history_depth, Path(scratch), key_files, uploaded, handled_links, context)
+            output.add(history_git, arcname='.git')
+            history_result['history'] = 'screened'
     return history_result
 
 

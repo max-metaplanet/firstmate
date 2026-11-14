@@ -168,12 +168,13 @@
 # each of HEAD and refs/remotes/origin/main, counting each tip as depth one.
 # Both tips must exist locally.
 # Only those two tips, their bounded commits/trees/blobs, shallow boundaries,
-# and fresh Git metadata travel. No other refs, stash, reflogs, hooks or local
-# Git config travel, and the only remote declared is the promisor marker below.
+# and fresh Git metadata travel. A fresh fm-boat-ref-<SHA> branch retains main
+# through ordinary cloning. No unrelated refs, stash, reflogs, hooks, host Git
+# config or remotes travel.
 # Current tracked edits/deletions still apply.
 # A commit's bytes are its identity, so it cannot be withheld and its scan is
 # the one that cannot afford a false positive: a commit, with its headers and
-# message, discards the history attempt when it is not UTF-8,
+# message, refuses selected history when it is not UTF-8,
 # contains binary content, a credential-key assignment using =, a screened
 # bearer token, or an issued credential (private-key block or provider key).
 # Command names such as secrets:scan and quoted example URLs remain prose.
@@ -181,9 +182,15 @@
 # in the uploaded source archive, after every path, key-file and content rule
 # above has decided what that archive carries. Every other blob, including
 # HEAD's copy of a file the working tree edits, deletes, excludes or screens
-# out, is screened with the full credential scanner and on a hit is withheld.
-# An object at an excluded or configured-key path, and a historical submodule
-# entry, are withheld the same way.
+# out, is screened with the full credential scanner and on a hit refuses history.
+# An excluded or configured-key path, historical submodule, or screened blob
+# refuses selected history locally before any provider call. No partial clone
+# or promise of withheld objects is exported. Both fetched and exported object
+# closure must pass Git fsck. Selected head and main must have a merge base;
+# insufficient depth fails locally and requires more ancestry from the caller.
+# upload/history-exclusions.json records refused object IDs, paths, commits and
+# rule categories, never file contents. An empty objects list means no objects
+# were excluded by screening; other input/ancestry errors can still refuse.
 # Source preserves tracked relative symlinks whose targets resolve inside the
 # screened archive, including implied directories and other admitted links.
 # Symlink paths follow the source path filter, with .claude/skills additionally
@@ -193,17 +200,9 @@
 # History retains screened symlink target blobs in its Git pack.
 # Submodules in uploaded source, absolute or escaping symlink targets, and
 # symlink parent components are refused.
-# A withheld object keeps its tree entry, so every commit, tree, ancestry, name
-# and date stays what the project's own tooling reads and `git fsck` stays
-# clean: the pack is marked promisor, as `git clone --filter=blob:none` marks
-# its own, and the promisor remote fm-boat-withheld carries no URL, so reading
-# a withheld object's content fails loudly rather than silently. That marking
-# needs a remote Git supporting the partial-clone extension; an older one
-# refuses the repository outright instead of reading it wrong.
-# A history screen refusal falls back to the screened current-source snapshot
-# with no historical objects. A notice and result evidence name the reason
-# and path or commit ID, never content. Missing origin/main and other Git errors
-# still fail the run. Current-source screening and refusal behavior is unchanged.
+# Any selected-history screening refusal, missing origin/main, incomplete object
+# closure, insufficient merge ancestry or other Git error fails locally before
+# provider calls. Requested history never falls back to a synthetic snapshot.
 # --history-input FILE instead selects pinned, complete, screened snapshots.
 # Its JSON object has exactly these fields (schema is literal; SHAs are full
 # lowercase object IDs for this checkout's object format):
@@ -232,11 +231,18 @@
 # An excluded, screened, unavailable or unsupported object in ANY selected tree
 # refuses the input before allocation, with no synthetic or local fallback.
 # Select only required safe snapshots. A true secret must stay local.
-# templates explicitly admits up to 64 .env.example or .env.template paths,
-# under otherwise permitted directories. Each working/historical version must
-# contain only blank lines, screened comments and shell-style KEY= assignments
-# with empty values (also '' or ""). Populated values, binary content, credential
-# text in comments, other .env names and configured key paths remain refused.
+# The reviewed root .env.example and apps/planetgear/.env.example paths are
+# admitted in source and history after screening. Root values must be empty.
+# PlanetGear additionally permits only its exact reviewed public defaults and
+# two exact reviewed prose comments, owned by fm-boat-run.py's template tables.
+# templates explicitly admits up to 64 additional .env.example or .env.template
+# paths under otherwise permitted directories, with blank lines, screened
+# comments and shell-style KEY= assignments with empty values (also '' or "").
+# Unknown populated values, binary content, issued keys, private-key blocks,
+# credential text in other comments, real env names and configured key paths
+# remain refused. No test-file or .env-prefix blanket exception exists.
+# A synthetic run without selected history excludes a refused template, records
+# it in upload/history-exclusions.json and continues; selected history refuses.
 # Template bytes and Git identities are preserved, never rewritten or redacted.
 # Host history reads disable Git lazy fetch. A promisor checkout needing objects
 # must name an explicit complete source; fetching hydrates only new output
@@ -249,7 +255,7 @@
 # authenticated guards still need their existing local path. It does not certify
 # product guard parity or excuse missing inputs. Use sufficient ancestry for the
 # selected tips' merge base. A shallow boundary cannot prove older ancestry.
-# Logs name the withheld count and one path, never blob or commit content.
+# Logs name the excluded count and one path, never blob or commit content.
 # Run from the worktree root remotely at /home/user/fm-job/source on either
 # provider, preserving existing absolute command paths. Install remote
 # dependencies explicitly in COMMAND; native local node_modules never travel.
@@ -278,7 +284,7 @@
 # outcomes never retry. Recovery does not extend the transfer deadline or TTL.
 # OUTPUT must be a new directory outside the source tree. result.json records
 # kind, remote_exit, source_head, source_sha256, vm_id and cleanup state, plus
-# history=synthetic|screened|fallback-synthetic and history_reason on fallback.
+# history=synthetic|screened. Synthetic mode applies only without selected history.
 # upload_bytes and push_timeout_seconds record the transfer budget.
 # upload_recovered=true records successful archive verification after scp timeout.
 # Unavailable request errors name timeout, OS error or bad response and the exception class,
