@@ -2449,25 +2449,37 @@ for name, unsafe_path, unsafe_content in [
     assert 'never-print' not in json.dumps(evidence)
 print('ok - excluded, credential-bearing and binary historical objects refuse locally with content-free evidence')
 
-for edited in (False, True):
-    p, state, env = case('template-working-tree-' + str(edited))
-    work = p / 'work'
-    unsafe = 'UNKNOWN_SECRET=never-print-rejected\n'
-    (work / '.env.example').write_text('API_TOKEN=\n' if edited else unsafe)
-    git(work, 'add', '-f', '.env.example')
-    git(work, 'commit', '-qm', 'template')
-    head = git(work, 'rev-parse', 'HEAD').stdout.decode().strip()
-    (work / '.env.example').write_text(unsafe)
-    oid = subprocess.run(['git', 'hash-object', '--stdin'], input=unsafe.encode(),
-                         capture_output=True, check=True).stdout.decode().strip()
-    r = launch(p, env)
-    assert r.returncode == 2, (edited, r.stderr)
-    assert not (state / 'calls.jsonl').exists()
-    evidence = json.loads((p / 'output/upload/history-exclusions.json').read_text())
-    assert evidence['objects'] == [{'oid': oid, 'path': '.env.example', 'rule': 'template-content',
-                                    'commit': '' if edited else head}], evidence
-    assert 'never-print-rejected' not in json.dumps(evidence)
-print('ok - a refused template names its commit only when that commit holds the refused bytes')
+for history in (False, True):
+    for edited in (False, True):
+        p, state, env = case('template-working-tree-' + str(history) + '-' + str(edited),
+                             clean_history=history)
+        work = p / 'work'
+        unsafe = 'UNKNOWN_SECRET=never-print-rejected\n'
+        (work / '.env.example').write_text('API_TOKEN=\n' if edited else unsafe)
+        git(work, 'add', '-f', '.env.example')
+        git(work, 'commit', '-qm', 'template')
+        head = git(work, 'rev-parse', 'HEAD').stdout.decode().strip()
+        git(work, 'update-ref', 'refs/remotes/origin/main', head)
+        (work / '.env.example').write_text(unsafe)
+        oid = subprocess.run(['git', 'hash-object', '--stdin'], input=unsafe.encode(),
+                             capture_output=True, check=True).stdout.decode().strip()
+        r = launch(p, env, options=('--history-depth', '1') if history else ())
+        if history:
+            assert r.returncode == 2, (edited, r.stderr)
+            assert b'history input template refused: .env.example' in r.stderr, r.stderr
+            assert not (state / 'calls.jsonl').exists()
+        else:
+            assert r.returncode == 0, (edited, r.stderr)
+            assert b'excluded screened template that failed review: .env.example' in r.stderr, r.stderr
+            assert b'history' not in r.stderr, r.stderr
+            assert '.env.example' not in json.loads((state / 'uploaded.json').read_text())
+            empty(state)
+        assert b'never-print-rejected' not in r.stdout + r.stderr
+        evidence = json.loads((p / 'output/upload/history-exclusions.json').read_text())
+        assert evidence['objects'] == [{'oid': oid, 'path': '.env.example', 'rule': 'template-content',
+                                        'commit': '' if edited else head}], evidence
+        assert 'never-print-rejected' not in json.dumps(evidence)
+print('ok - a failing template is excluded in synthetic runs, refuses selected history, and names its commit only when it holds the bytes')
 
 p, state, env = case('history-current-blob', clean_history=True)
 work = p / 'work'

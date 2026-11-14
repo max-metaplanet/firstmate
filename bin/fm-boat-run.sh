@@ -241,6 +241,8 @@
 # Unknown populated values, binary content, issued keys, private-key blocks,
 # credential text in other comments, real env names and configured key paths
 # remain refused. No test-file or .env-prefix blanket exception exists.
+# A synthetic run without selected history excludes a refused template, records
+# it in upload/history-exclusions.json and continues; selected history refuses.
 # Template bytes and Git identities are preserved, never rewritten or redacted.
 # Host history reads disable Git lazy fetch. A promisor checkout needing objects
 # must name an explicit complete source; fetching hydrates only new output

@@ -915,6 +915,7 @@ class _Hashing:
 
 def archive_source(root, names, links, archive, history_depth, key_files, head, object_format, handled_links, context):
     uploaded = set()
+    refused = []
     history_result = {'history': 'synthetic'}
     templates = REVIEWED_TEMPLATES.keys() | (context.templates if context else frozenset())
     if context:
@@ -942,11 +943,15 @@ def archive_source(root, names, links, archive, history_depth, key_files, head, 
                 if name in templates and not safe_template(data, name):
                     blob = git(root, 'hash-object', '--stdin', input=data).decode().strip()
                     committed = git(root, 'ls-tree', head, '--', name).split()
-                    save(archive.parent / 'history-exclusions.json', {
-                        'schema': 'fm-boat-exclusions.v1', 'objects': [dict(
-                            oid=blob, path=name, rule='template-content',
-                            commit=head if committed[2:3] == [blob.encode()] else '')]})
-                    raise Failure('history input template refused: ' + name, 2)
+                    refused.append(dict(oid=blob, path=name, rule='template-content',
+                                        commit=head if committed[2:3] == [blob.encode()] else ''))
+                    save(archive.parent / 'history-exclusions.json',
+                         {'schema': 'fm-boat-exclusions.v1', 'objects': refused})
+                    if history_depth is not None:
+                        raise Failure('history input template refused: ' + name, 2)
+                    print('boat-offload: excluded screened template that failed review: ' + name,
+                          file=sys.stderr)
+                    continue
                 if name not in templates and not safe_allowlisted(name, data):
                     print('boat-offload: excluded allowlisted file with credential-looking content: ' +
                           name, file=sys.stderr)
