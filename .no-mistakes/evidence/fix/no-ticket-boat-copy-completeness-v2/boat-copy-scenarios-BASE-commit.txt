@@ -1,0 +1,85 @@
+
+=== S1 synthetic: reviewed templates admitted byte-identical; .env/.env.local stay home (expected pg-sha=d58dad5901d392731fdcce2b5e3faa00716090b41545204efda68c0f99780a44)
+exit: 0
+  | REMOTE pg-sha=
+  | REMOTE root=
+  | REMOTE env-present=0
+  | REMOTE envlocal-present=0
+provider calls made: True
+result.history: synthetic
+
+=== S2 unknown-populated history=False
+exit: 0
+  | REMOTE pg-present=no
+provider calls made: True
+result.history: synthetic
+
+=== S2 unknown-populated history=True
+exit: 0
+  | REMOTE pg-present=no
+  | boat-offload: history withheld 1 object(s) from the upload, 0 of them screened historical blobs
+provider calls made: True
+result.history: screened
+
+=== S2 changed-reviewed history=False
+exit: 0
+  | REMOTE pg-present=no
+provider calls made: True
+result.history: synthetic
+
+=== S2 changed-reviewed history=True
+exit: 0
+  | REMOTE pg-present=no
+  | boat-offload: history withheld 1 object(s) from the upload, 0 of them screened historical blobs
+provider calls made: True
+result.history: screened
+
+=== S2 secret-value history=False
+exit: 0
+  | REMOTE pg-present=no
+provider calls made: True
+result.history: synthetic
+
+=== S2 secret-value history=True
+exit: 0
+  | REMOTE pg-present=no
+  | boat-offload: history withheld 1 object(s) from the upload, 0 of them screened historical blobs
+provider calls made: True
+result.history: screened
+
+=== S2 key-block-comment history=False
+exit: 0
+  | REMOTE pg-present=no
+provider calls made: True
+result.history: synthetic
+
+=== S2 key-block-comment history=True
+exit: 0
+  | REMOTE pg-present=no
+  | boat-offload: history withheld 1 object(s) from the upload, 0 of them screened historical blobs
+provider calls made: True
+result.history: screened
+
+=== S3 history-depth=3: historical .env.example blobs fb6be76e 9fd5593a present, fsck clean, no promisor, ordinary clone works
+exit: 128
+  | boat-offload: history withheld 3 object(s) from the upload, 0 of them screened historical blobs
+provider calls made: True
+result.history: screened
+
+=== S4 historical .env in selected history
+exit: 0
+  | REMOTE should-not-run
+  | boat-offload: history withheld 1 object(s) from the upload, 0 of them screened historical blobs
+provider calls made: True
+result.history: screened
+Traceback (most recent call last):
+  File "/tmp/fm-boat-scn/drive.py", line 75, in <module>
+    ev = json.loads((p/'output/upload/history-exclusions.json').read_text())['objects']
+                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/usr/lib/python3.14/pathlib/__init__.py", line 788, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors, newline=newline) as f:
+         ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/pathlib/__init__.py", line 772, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/tmp/fm-boat-scn.dyxgd53c/s4/output/upload/history-exclusions.json'

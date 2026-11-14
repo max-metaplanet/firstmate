@@ -1,0 +1,196 @@
+
+=== S1 synthetic: reviewed templates admitted byte-identical; .env/.env.local stay home (expected pg-sha=d58dad5901d392731fdcce2b5e3faa00716090b41545204efda68c0f99780a44)
+exit: 0
+  | REMOTE pg-sha=d58dad5901d392731fdcce2b5e3faa00716090b41545204efda68c0f99780a44
+  | REMOTE root=DATABASE_URL=;API_TOKEN=;
+  | REMOTE env-present=0
+  | REMOTE envlocal-present=0
+provider calls made: True
+result.history: synthetic
+
+=== S2 unknown-populated history=False
+exit: 0
+  | REMOTE pg-present=no
+  | boat-offload: excluded screened template that failed review: apps/planetgear/.env.example
+provider calls made: True
+exclusion manifest: {
+  "schema": "fm-boat-exclusions.v1",
+  "objects": [
+    {
+      "oid": "0c3282825d9a72cb96f5bbfd51ab3f728e27a042",
+      "path": "apps/planetgear/.env.example",
+      "rule": "template-content",
+      "commit": "0e327d04317dc193583422c73fdabdba48b8fb5a"
+    }
+  ]
+}
+result.history: synthetic
+
+=== S2 unknown-populated history=True
+exit: 2
+  | boat-offload: history input template refused: apps/planetgear/.env.example
+provider calls made: False
+exclusion manifest: {
+  "schema": "fm-boat-exclusions.v1",
+  "objects": [
+    {
+      "oid": "0c3282825d9a72cb96f5bbfd51ab3f728e27a042",
+      "path": "apps/planetgear/.env.example",
+      "rule": "template-content",
+      "commit": "454d663f426f00505573adad7fb430fe80587115"
+    }
+  ]
+}
+result.history: None
+
+=== S2 changed-reviewed history=False
+exit: 0
+  | REMOTE pg-present=no
+  | boat-offload: excluded screened template that failed review: apps/planetgear/.env.example
+provider calls made: True
+exclusion manifest: {
+  "schema": "fm-boat-exclusions.v1",
+  "objects": [
+    {
+      "oid": "c01b6b10c25c60a3329dd2ceba80551db2a25410",
+      "path": "apps/planetgear/.env.example",
+      "rule": "template-content",
+      "commit": "0d86781adfd7e8e2e6c2bcf3ca123cf12602ed49"
+    }
+  ]
+}
+result.history: synthetic
+
+=== S2 changed-reviewed history=True
+exit: 2
+  | boat-offload: history input template refused: apps/planetgear/.env.example
+provider calls made: False
+exclusion manifest: {
+  "schema": "fm-boat-exclusions.v1",
+  "objects": [
+    {
+      "oid": "c01b6b10c25c60a3329dd2ceba80551db2a25410",
+      "path": "apps/planetgear/.env.example",
+      "rule": "template-content",
+      "commit": "0d86781adfd7e8e2e6c2bcf3ca123cf12602ed49"
+    }
+  ]
+}
+result.history: None
+
+=== S2 secret-value history=False
+exit: 0
+  | REMOTE pg-present=no
+  | boat-offload: excluded screened template that failed review: apps/planetgear/.env.example
+provider calls made: True
+exclusion manifest: {
+  "schema": "fm-boat-exclusions.v1",
+  "objects": [
+    {
+      "oid": "2c7a68e387cac15412009c4b4c8a288b8438b768",
+      "path": "apps/planetgear/.env.example",
+      "rule": "template-content",
+      "commit": "dd0538bf8077091e8e628441d1ec92a0f669dc5b"
+    }
+  ]
+}
+result.history: synthetic
+
+=== S2 secret-value history=True
+exit: 2
+  | boat-offload: history input template refused: apps/planetgear/.env.example
+provider calls made: False
+exclusion manifest: {
+  "schema": "fm-boat-exclusions.v1",
+  "objects": [
+    {
+      "oid": "2c7a68e387cac15412009c4b4c8a288b8438b768",
+      "path": "apps/planetgear/.env.example",
+      "rule": "template-content",
+      "commit": "dd0538bf8077091e8e628441d1ec92a0f669dc5b"
+    }
+  ]
+}
+result.history: None
+
+=== S2 key-block-comment history=False
+exit: 0
+  | REMOTE pg-present=no
+  | boat-offload: excluded screened template that failed review: apps/planetgear/.env.example
+provider calls made: True
+exclusion manifest: {
+  "schema": "fm-boat-exclusions.v1",
+  "objects": [
+    {
+      "oid": "5d6b549faf79a0ea87f7bc7064c82af8e241db17",
+      "path": "apps/planetgear/.env.example",
+      "rule": "template-content",
+      "commit": "c7c4efdbb708dda3ae042d7e5dd318ae31c4f5a0"
+    }
+  ]
+}
+result.history: synthetic
+
+=== S2 key-block-comment history=True
+exit: 2
+  | boat-offload: history input template refused: apps/planetgear/.env.example
+provider calls made: False
+exclusion manifest: {
+  "schema": "fm-boat-exclusions.v1",
+  "objects": [
+    {
+      "oid": "5d6b549faf79a0ea87f7bc7064c82af8e241db17",
+      "path": "apps/planetgear/.env.example",
+      "rule": "template-content",
+      "commit": "f176cc073111f0531cfd1482291c71f3d8ce56ed"
+    }
+  ]
+}
+result.history: None
+
+=== S3 history-depth=3: historical .env.example blobs fb6be76e 9fd5593a present, fsck clean, no promisor, ordinary clone works
+exit: 0
+  | REMOTE historical-blobs-ok
+provider calls made: True
+exclusion manifest: {
+  "schema": "fm-boat-exclusions.v1",
+  "objects": []
+}
+result.history: screened
+
+=== S4 historical .env in selected history
+exit: 2
+  | boat-offload: history closure incomplete: 1 excluded object(s); see history-exclusions.json; first path: .env
+provider calls made: False
+exclusion manifest: {
+  "schema": "fm-boat-exclusions.v1",
+  "objects": [
+    {
+      "oid": "a9c2775735bf0bb3922e5e4d5e450a97746187b6",
+      "path": ".env",
+      "commit": "b734828db835e403183e7d5f1c6f9f69236b1c3d",
+      "rule": "excluded-path"
+    }
+  ]
+}
+result.history: None
+
+=== S5 test .env.test not blanket-admitted
+exit: 0
+  | REMOTE fixture-env=no
+provider calls made: True
+result.history: synthetic
+
+=== SUMMARY
+S1 PASS
+S2-unknown-populated-synthetic PASS
+S2-unknown-populated-hist PASS
+S2-changed-reviewed-synthetic PASS
+S2-changed-reviewed-hist PASS
+S2-secret-value-synthetic PASS
+S2-secret-value-hist PASS
+S2-key-block-comment-synthetic PASS
+S2-key-block-comment-hist PASS
+S3 PASS
+S4 PASS
+S5 PASS
