@@ -28,7 +28,7 @@ No worker, secondmate, or ordinary relaunch reads or carries Remote Control.
 
 Claude gates a folder it has never seen behind an interactive workspace-trust dialog (titled "Quick safety check: Is this a project you created or one you trust?"), so every fresh task worktree would hit it, and so would every secondmate home no operator has opened by hand.
 `--dangerously-skip-permissions` does not cover that gate: `claude --help` records that the dialog is skipped only in non-interactive mode, through `-p` or a non-TTY stdout, and a spawned pane is interactive.
-Every claude spawn therefore pre-registers the directory its pane starts in before launch, and the dialog does not appear: the task worktree for a ship or scout, and the home itself plus its project clones for a `--secondmate` spawn, in either seeded shape (a leased worktree or a standalone clone).
+Every claude spawn therefore pre-registers the directory its pane starts in before launch, and the dialog does not appear: the task worktree for a ship or scout, and the home itself plus eligible project clones for a `--secondmate` spawn, in either seeded shape (a leased worktree or a standalone clone).
 
 A second, separate dialog - "Allow external CLAUDE.md file imports?" - renders whenever a loaded Project- or Local-type `CLAUDE.md` or `.claude/rules` entry imports a path outside the working directory.
 A User-type `~/.claude/CLAUDE.md` does not trigger it, whatever that file itself imports.

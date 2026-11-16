@@ -1,6 +1,5 @@
 # Claude Code external-CLAUDE.md-import approval
 
-Audience: maintainer-verification.
 This record holds the empirical facts [`bin/fm-claude-trust.sh`](../../bin/fm-claude-trust.sh) relies on when it writes `hasClaudeMdExternalIncludesApproved` and `hasClaudeMdExternalIncludesWarningShown`.
 Refresh it whenever Claude Code's handling of those flags is re-measured; the script's own header owns the contract this evidence supports.
 
@@ -47,8 +46,6 @@ function Dt(e){try{return qt(e,K(S(e,".git"),"utf-8"))}catch{return e}}
 
 `Dt` reads a linked worktree's `.git` file, follows its `gitdir:` pointer to that worktree's git dir, reads `commondir`, and returns the common dir's parent.
 A linked worktree therefore keys its project config to the PRIMARY CHECKOUT.
-Registration covers the launch directory and its canonical checkout, writing one entry when those paths coincide.
-Secondmate-home mode also covers eligible project clones and their canonical checkouts.
 
 ### An answer writes both flags
 
