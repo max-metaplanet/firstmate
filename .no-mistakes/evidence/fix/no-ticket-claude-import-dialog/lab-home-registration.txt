@@ -1,0 +1,2 @@
+trusted: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7K5HMNEBSF8Q21D700K2S72/.live-trust/labhome
+{"hasTrustDialogAccepted": true, "hasClaudeMdExternalIncludesApproved": true, "hasClaudeMdExternalIncludesWarningShown": true}

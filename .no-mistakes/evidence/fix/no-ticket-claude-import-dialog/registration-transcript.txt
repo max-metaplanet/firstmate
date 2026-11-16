@@ -1,0 +1,86 @@
+$ git init -q ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7K5HMNEBSF8Q21D700K2S72/.live-trust/project
+exit=0
+
+$ git -C ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7K5HMNEBSF8Q21D700K2S72/.live-trust/project -c user.name=Lab -c user.email=lab@example.invalid commit -q --allow-empty -m fixture
+exit=0
+
+$ ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7K5HMNEBSF8Q21D700K2S72/bin/fm-claude-trust.sh --project ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7K5HMNEBSF8Q21D700K2S72/.live-trust/project
+trusted: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7K5HMNEBSF8Q21D700K2S72/.live-trust/project
+exit=0
+
+$ git -C ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7K5HMNEBSF8Q21D700K2S72/.live-trust/project worktree add -q -b worker ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7K5HMNEBSF8Q21D700K2S72/.live-trust/worker
+exit=0
+
+$ ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7K5HMNEBSF8Q21D700K2S72/bin/fm-claude-trust.sh ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7K5HMNEBSF8Q21D700K2S72/.live-trust/worker ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7K5HMNEBSF8Q21D700K2S72/.live-trust/project
+trusted: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7K5HMNEBSF8Q21D700K2S72/.live-trust/worker
+trusted (project root): ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7K5HMNEBSF8Q21D700K2S72/.live-trust/project
+exit=0
+
+$ ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7K5HMNEBSF8Q21D700K2S72/bin/fm-claude-trust.sh ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7K5HMNEBSF8Q21D700K2S72/.live-trust/worker ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7K5HMNEBSF8Q21D700K2S72/.live-trust/project
+trusted: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7K5HMNEBSF8Q21D700K2S72/.live-trust/worker
+trusted: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7K5HMNEBSF8Q21D700K2S72/.live-trust/project; project keeps its recorded external-imports decline in ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7K5HMNEBSF8Q21D700K2S72/.live-trust/profile/.claude.json
+exit=0
+
+$ git -C ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7K5HMNEBSF8Q21D700K2S72/.live-trust/project worktree add -q -b mate ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7K5HMNEBSF8Q21D700K2S72/.live-trust/mate
+exit=0
+
+$ git init -q ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7K5HMNEBSF8Q21D700K2S72/.live-trust/mate/projects/fresh
+exit=0
+
+$ git -C ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7K5HMNEBSF8Q21D700K2S72/.live-trust/mate/projects/fresh -c user.name=Lab -c user.email=lab@example.invalid commit -q --allow-empty -m fixture
+exit=0
+
+$ git init -q ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7K5HMNEBSF8Q21D700K2S72/.live-trust/mate/projects/declined
+exit=0
+
+$ git -C ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7K5HMNEBSF8Q21D700K2S72/.live-trust/mate/projects/declined -c user.name=Lab -c user.email=lab@example.invalid commit -q --allow-empty -m fixture
+exit=0
+
+$ ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7K5HMNEBSF8Q21D700K2S72/bin/fm-claude-trust.sh --secondmate-home ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7K5HMNEBSF8Q21D700K2S72/.live-trust/mate labmate
+trusted: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7K5HMNEBSF8Q21D700K2S72/.live-trust/mate
+trusted: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7K5HMNEBSF8Q21D700K2S72/.live-trust/project; project keeps its recorded external-imports decline in ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7K5HMNEBSF8Q21D700K2S72/.live-trust/profile/.claude.json
+trusted: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7K5HMNEBSF8Q21D700K2S72/.live-trust/mate/projects/declined; project keeps its recorded external-imports decline in ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7K5HMNEBSF8Q21D700K2S72/.live-trust/profile/.claude.json
+trusted (project clone): ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7K5HMNEBSF8Q21D700K2S72/.live-trust/mate/projects/fresh
+exit=0
+
+$ ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7K5HMNEBSF8Q21D700K2S72/bin/fm-claude-trust.sh --project ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7K5HMNEBSF8Q21D700K2S72/.live-trust/mate/projects/stray
+error: refusing to pre-register Claude trust: '~/.no-mistakes/worktrees/c0c4fcacb05a/01M7K5HMNEBSF8Q21D700K2S72/.live-trust/mate/projects/stray' is not the top level of a git checkout, so Claude Code would key its project config somewhere else
+exit=1
+
+Persisted store after actual CLI registrations:
+{
+  "hasCompletedOnboarding": true,
+  "theme": "dark",
+  "projects": {
+    "~/.no-mistakes/worktrees/c0c4fcacb05a/01M7K5HMNEBSF8Q21D700K2S72/.live-trust/project": {
+      "hasClaudeMdExternalIncludesApproved": false,
+      "hasClaudeMdExternalIncludesWarningShown": true,
+      "custom": "keep",
+      "hasTrustDialogAccepted": true
+    },
+    "~/.no-mistakes/worktrees/c0c4fcacb05a/01M7K5HMNEBSF8Q21D700K2S72/.live-trust/worker": {
+      "hasTrustDialogAccepted": true,
+      "hasClaudeMdExternalIncludesApproved": true,
+      "hasClaudeMdExternalIncludesWarningShown": true
+    },
+    "~/.no-mistakes/worktrees/c0c4fcacb05a/01M7K5HMNEBSF8Q21D700K2S72/.live-trust/mate/projects/declined": {
+      "hasClaudeMdExternalIncludesApproved": false,
+      "hasClaudeMdExternalIncludesWarningShown": true,
+      "hasTrustDialogAccepted": true
+    },
+    "~/.no-mistakes/worktrees/c0c4fcacb05a/01M7K5HMNEBSF8Q21D700K2S72/.live-trust/mate": {
+      "hasTrustDialogAccepted": true,
+      "hasClaudeMdExternalIncludesApproved": true,
+      "hasClaudeMdExternalIncludesWarningShown": true
+    },
+    "~/.no-mistakes/worktrees/c0c4fcacb05a/01M7K5HMNEBSF8Q21D700K2S72/.live-trust/mate/projects/fresh": {
+      "hasTrustDialogAccepted": true,
+      "hasClaudeMdExternalIncludesApproved": true,
+      "hasClaudeMdExternalIncludesWarningShown": true
+    }
+  },
+  "unrelated": {
+    "keep": 42
+  }
+}
+
