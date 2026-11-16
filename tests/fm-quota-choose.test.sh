@@ -766,4 +766,60 @@ out=$(bash -c 'set -e; . "$1/fm-quota-axi-lib.sh"; fm_quota_single_provider_for_
 [ "$out" = claude ] || fail "provider-table lookup under set -e printed: $out"
 ok "provider-table lookup prints the provider when called directly under set -e"
 
+# --- --kind applies the home's worker-runtime preference, as a reorder only ---
+PREFER_HOME="$LAB/prefer-home"
+mkdir -p "$PREFER_HOME/config"
+
+choose_with_kind() {  # <kind> <stderr-file> [candidate...]
+  local kind=$1 errfile=$2
+  shift 2
+  QUOTA_AXI_CALLS="$CALLS" QUOTA_AXI_FIXTURE="$FIXTURE" FM_HOME="$PREFER_HOME" \
+    PATH="$FAKEBIN:$PATH" "$BIN/fm-quota-choose.sh" --snapshot "$LAB/captured.json" \
+    --kind "$kind" "$@" 2> "$errfile"
+}
+
+printf '%s\n' "$help" | grep -Fq -- '--kind names the kind of work' \
+  || fail "help omitted the --kind preference contract"
+ok "help documents the --kind preference"
+
+# Without a preference the caller's own order decides, exactly as before.
+rm -f "$PREFER_HOME/config/dispatch-prefer"
+out=$(choose_with_kind implementation "$LAB/kind-none.err" claude:claude-3-5-sonnet codex:default)
+[ "$out" = "claude claude-3-5-sonnet" ] || fail "no preference: expected 'claude claude-3-5-sonnet', got '$out'"
+grep -Fq 'no preference declared for kind implementation' "$LAB/kind-none.err" \
+  || fail "an absent preference should say so on stderr"
+ok "--kind with no declared preference leaves the caller's order alone"
+
+# A preference moves its harness's candidates to the front of that same list.
+printf 'implementation=codex\n' > "$PREFER_HOME/config/dispatch-prefer"
+out=$(choose_with_kind implementation "$LAB/kind-codex.err" claude:claude-3-5-sonnet codex:default)
+[ "$out" = "codex default" ] || fail "preference: expected 'codex default', got '$out'"
+grep -Fq 'preference implementation=codex moved 1 candidate(s) first' "$LAB/kind-codex.err" \
+  || fail "an applied preference should say so on stderr"
+ok "--kind moves the preferred harness's candidates first"
+
+# The eligibility walk is unchanged, so an exhausted preferred candidate still
+# loses the work to the next eligible one rather than forcing a stall.
+out=$(choose_with_kind implementation "$LAB/kind-exhausted.err" claude:claude-3-5-sonnet codex:model:codex_bengalfox)
+[ "$out" = "claude claude-3-5-sonnet" ] || fail "exhausted preference: expected 'claude claude-3-5-sonnet', got '$out'"
+ok "--kind never forces an exhausted preferred candidate"
+
+# A preference naming no supplied candidate changes nothing and says so.
+printf 'implementation=cursor\n' > "$PREFER_HOME/config/dispatch-prefer"
+out=$(choose_with_kind implementation "$LAB/kind-unlisted.err" claude:claude-3-5-sonnet codex:default)
+[ "$out" = "claude claude-3-5-sonnet" ] || fail "unlisted preference: expected 'claude claude-3-5-sonnet', got '$out'"
+grep -Fq 'preference implementation=cursor names no supplied candidate: no-op' "$LAB/kind-unlisted.err" \
+  || fail "an unlisted preference should report the no-op on stderr"
+ok "--kind reports a preference that names no supplied candidate"
+
+# A malformed preference file is an actionable error, not a silent fallback.
+printf 'implementation codex\n' > "$PREFER_HOME/config/dispatch-prefer"
+if out=$(choose_with_kind implementation "$LAB/kind-malformed.err" claude:claude-3-5-sonnet); then
+  fail "malformed preference: expected a nonzero exit, got '$out'"
+fi
+grep -Fq 'malformed preference file' "$LAB/kind-malformed.err" \
+  || fail "a malformed preference file should name itself in the refusal"
+rm -f "$PREFER_HOME/config/dispatch-prefer"
+ok "--kind refuses a malformed preference file"
+
 printf '# all fm-quota-choose tests passed\n'

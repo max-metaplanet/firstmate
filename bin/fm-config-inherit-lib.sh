@@ -4,7 +4,10 @@
 # config/, so a secondmate's OWN crewmates inherit the primary's settings
 # (e.g. primary config/crew-dispatch.json makes a secondmate use the same dispatch
 # profile rules and primary config/dispatch-never-send keeps the same values
-# out of its dispatch resolver requests, primary config/crew-harness=codex makes a secondmate's crewmates
+# out of its dispatch resolver requests, primary config/dispatch-prefer makes a
+# secondmate prefer the same worker runtime for the same kind of work, so one
+# bin/fm-prefer.sh set reaches every home,
+# primary config/crew-harness=codex makes a secondmate's crewmates
 # spawn on codex too, primary config/backlog-backend=manual makes that home
 # hand-edit backlog files too, primary config/backend pins that home's local
 # runtime-backend default for future spawns, primary config/startup-memory-budget
@@ -92,7 +95,7 @@ FM_SHARED_CAPTAIN_MODE="444"
 # The declared inheritable set (space-separated, config-dir-relative item paths).
 # Extend here to inherit more of the primary's local config; override via the
 # environment only in tests. Items must not contain whitespace.
-FM_INHERITABLE_CONFIG="${FM_INHERITABLE_CONFIG:-crew-dispatch.json dispatch-never-send crew-harness backlog-backend backend herdr-presentation-spaces herdr-project-groups startup-memory-budget trace-context launch-env-allowlist claude-permission-mode lavish-axi-host keep-ai-trailers supervision-host-off firstmate-role claude-seat claude-seats-root claude-seat-threshold claude-seat-destination-min claude-seat-spare-leader claude-seat-extra-usage claude-seat-auto-exclude claude-seat-no-session-window claude-seat-floor claude-seat-floor-readd claude-seat-floor-dwell claude-seat-session-share claude-seat-resting codex-seat codex-seats-root codex-seat-threshold codex-seat-destination-min codex-seat-spare-leader codex-seat-auto-exclude grok-seat grok-seats-root grok-seat-threshold grok-seat-destination-min grok-seat-spare-leader grok-seat-auto-exclude}"
+FM_INHERITABLE_CONFIG="${FM_INHERITABLE_CONFIG:-crew-dispatch.json dispatch-never-send dispatch-prefer crew-harness backlog-backend backend herdr-presentation-spaces herdr-project-groups startup-memory-budget trace-context launch-env-allowlist claude-permission-mode lavish-axi-host keep-ai-trailers supervision-host-off firstmate-role claude-seat claude-seats-root claude-seat-threshold claude-seat-destination-min claude-seat-spare-leader claude-seat-extra-usage claude-seat-auto-exclude claude-seat-no-session-window claude-seat-floor claude-seat-floor-readd claude-seat-floor-dwell claude-seat-session-share claude-seat-resting codex-seat codex-seats-root codex-seat-threshold codex-seat-destination-min codex-seat-spare-leader codex-seat-auto-exclude grok-seat grok-seats-root grok-seat-threshold grok-seat-destination-min grok-seat-spare-leader grok-seat-auto-exclude}"
 
 # firstmate-role additionally carries a proof-of-state receipt: a scoped role
 # grant (or its recorded absence) authorizes a secondmate home only while

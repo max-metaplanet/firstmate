@@ -1927,6 +1927,7 @@ This section is the single owner of the canonical schema and its per-field seman
   "rules": [
     {
       "when": "<natural-language condition describing a kind of task>",
+      "kind": "<the kind of work this rule is, for config/dispatch-prefer>",
       "approval": "captain",
       "min_confidence": 0.85,
       "path_force": "deployment-config",
@@ -1952,6 +1953,16 @@ This section is the single owner of the canonical schema and its per-field seman
 | `use` and optional top-level `default` | Accept one profile object or a non-empty array of profile objects; the single-object form remains fully backward-compatible. |
 | Profile `harness` | Required in every profile. |
 | Profile `model` and `effort`; rule `why` | Optional. |
+| Rule `kind` | Optional; a rule without it is unclassified, so no [worker runtime preference](#worker-runtime-preference-configdispatch-prefer) applies to it. |
+
+**Rule kinds**
+
+`kind` declares what kind of work a rule is, so [`config/dispatch-prefer`](#worker-runtime-preference-configdispatch-prefer) can name a preferred runtime for that kind.
+It is a deliberate classification you write on the rule, never inferred: nothing reads a rule's `when` text to decide its kind, because a rule's matching condition is written for the classifier and would make the kind drift with every reword.
+A kind is a token matching `^[a-z0-9]+(-[a-z0-9]+)*\z`, and the vocabulary is open so a fleet can name the kinds it actually routes.
+The kinds this fleet starts from are `implementation` for work that changes code, `investigation` for work whose deliverable is a written report, `mechanical` for rote edits with a known shape, `deployment` for work that reaches staging or production, and `contract` for work that changes binding agent-contract prose.
+Several rules may declare the same kind, and one preference then reaches all of them.
+A file that declares no kinds behaves exactly as it did before kinds existed.
 
 **Fields applied only by typed resolution**
 
@@ -2019,6 +2030,71 @@ See [`docs/examples/crew-dispatch.json`](examples/crew-dispatch.json) for a star
 **Inheritance**
 
 Secondmate homes inherit this file from the primary, so a secondmate's own crewmates apply the same dispatch profile behavior.
+
+## Worker runtime preference (config/dispatch-prefer)
+
+Which runtime is the right one for a kind of work depends on how much quota is left, and that changes day to day.
+`config/dispatch-prefer` is the local, gitignored file that says so in one short phrase, and [`bin/fm-prefer.sh`](../bin/fm-prefer.sh) writes it.
+
+```sh
+bin/fm-prefer.sh set implementation codex    # prefer codex for implementation
+bin/fm-prefer.sh set implementation grok     # prefer grok for implementation
+bin/fm-prefer.sh set implementation auto     # no preference for implementation
+bin/fm-prefer.sh show                        # what is preferred, and what it reaches
+bin/fm-prefer.sh clear                       # no preference for any kind
+```
+
+This section is the single owner of the operator contract.
+[`bin/fm-prefer-lib.sh`](../bin/fm-prefer-lib.sh) owns the file format, each consuming script's header owns how that consumer applies it, and "Crew dispatch profiles" above owns the rule `kind` a preference is matched to.
+
+**What a preference does, and what it never does**
+
+A preference REORDERS the candidates of the already-matched crew-dispatch rule so the preferred runtime comes first.
+That is its entire effect.
+
+- It never adds a candidate the rule does not already list.
+- It never overrides an explicit per-task override, which still wins.
+- It never relaxes a gate: eligibility, authentication facts, the quota and runway gates owned by [`quota-array-dispatch`](../.agents/skills/quota-array-dispatch/SKILL.md), the malformed-configuration refusal, and the strongest-reasoning-class rule all decide exactly what they decided before.
+- It therefore reorders only among candidates that already passed every gate and can be ranked, so an exhausted, ineligible, or unmeasured preferred runtime cannot be forced into the work.
+
+When the preferred runtime is not usable, the next candidate takes the work by the ordinary `spendPriority` ranking and the selection states plainly that the preference was not usable and why.
+A preference naming a runtime the matched rule does not list is a no-op for that rule and says so rather than passing silently; `bin/fm-prefer.sh set` and `show` report that same no-op at the moment you write it, before any task meets it.
+
+**File format**
+
+One `kind=harness` line per kind of work, where `kind` matches a rule's declared `kind` and `harness` names a verified harness.
+`auto` means no preference for that kind and is the same as omitting the line.
+Blank lines and `#` comment lines are ignored, whitespace around `=` is trimmed, and a kind may appear at most once.
+
+```text
+# which runtime is preferred, by kind of work
+implementation=codex
+investigation=grok
+```
+
+A malformed file is an actionable configuration error: `bin/fm-prefer.sh` and every consumer refuse and name the bad line rather than dropping the preference and routing anyway.
+
+**Which paths honor it**
+
+- [Typed dispatch resolution](#typed-dispatch-resolution-env-typesafe_api_key) applies it in code, reports it on a `preference:` line, and carries it through the sensitive-path free-model denial.
+- Firstmate's own intake applies it as the first step of [`quota-array-dispatch`](../.agents/skills/quota-array-dispatch/SKILL.md)'s ranking, so it works with or without the typed resolver's key.
+- [`bin/fm-quota-choose.sh`](../bin/fm-quota-choose.sh) applies it to a worker's own candidate list when the caller passes `--kind <kind>`.
+- Profiles taken from the top-level `default` set carry no rule and so no kind, and a `--codex-alternative` relaunch offer already fixes the runtime it ranks; both keep today's ranking exactly.
+
+**Nearly spent and unmeasured runtimes**
+
+Preferring a runtime whose own window is projected to exhaust, or whose `spendPriority` is overdrawn against its reset clock, is allowed and warned about, so the call stays the operator's and does not become a silent mid-task stall.
+Both conditions come from quota-axi's own published labels; there is no invented percentage floor.
+A preferred runtime whose quota cannot be measured at all is reported as unusable with that reason, and the remaining candidates are ranked as usual.
+An honest unknown is the outcome there, never a guessed number: a Codex lane authenticated by a metered API key is one such surface, because quota-axi reports it as `auth_required` rather than as measured headroom.
+
+**One command, every home**
+
+`config/dispatch-prefer` is declared inheritable in [`bin/fm-config-inherit-lib.sh`](../bin/fm-config-inherit-lib.sh), so every convergence point carries it: a secondmate spawn, the bootstrap secondmate sweep, the mid-session config push, and the remote inherited-material route.
+`bin/fm-prefer.sh set` and `clear` run that convergence themselves through `bin/fm-config-push.sh`, so one call leaves this machine and each live local and remote secondmate home correct.
+`--no-push` writes only this home.
+A failed convergence never undoes this home's change: it is reported, it names the homes still on their previous preference, and `bin/fm-config-push.sh` can be re-run on its own.
+A host that is not a registered secondmate route of this home receives nothing, because there is no supported route to it; register it under [Secondmate routes](#secondmate-routes-datasecondmatesmd) first.
 
 ## Typed dispatch resolution (.env TYPESAFE_API_KEY)
 

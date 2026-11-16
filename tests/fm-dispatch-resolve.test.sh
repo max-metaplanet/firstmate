@@ -1527,3 +1527,212 @@ MD
   pass "a sensitive target path cannot resolve to a free OpenCode model"
 }
 test_sensitive_target_denies_free_opencode
+
+# --- worker-runtime preference reorders the matched rule's candidates --------
+# Every case shares one rules file, one quota snapshot, and one answer; only
+# config/dispatch-prefer and the quota evidence change, so what the preference
+# itself does is the only moving part.
+test_preference() {
+  local prefer="$HOME_DIR/config/dispatch-prefer" chosen
+  cat > "$RULES" <<'JSON'
+{
+  "rules": [
+    {
+      "when": "A simple bug fix with a stated root cause.",
+      "kind": "implementation",
+      "use": [
+        {"harness": "claude", "model": "sonnet", "effort": "high"},
+        {"harness": "codex", "model": "gpt-5.6-sol"},
+        {"harness": "agy", "model": "agy-1", "effort": "high"}
+      ]
+    },
+    {
+      "when": "Genuinely very difficult design or planning work.",
+      "use": [
+        {"harness": "claude", "model": "sonnet", "effort": "high"},
+        {"harness": "codex", "model": "gpt-5.6-sol"}
+      ]
+    }
+  ],
+  "default": [{"harness": "claude", "model": "opus"}]
+}
+JSON
+  cat > "$RESPONSE" <<'JSON'
+{ "model": "jev-1.13.0",
+  "answers": { "rule": { "type": "choice", "choice": "rule_1", "confidence": 0.95,
+    "probabilities": { "rule_1": 0.97, "rule_2": 0.02, "default": 0.01 } } },
+  "usage": { "input_tokens": 20, "output_tokens": 5 } }
+JSON
+  # agy leads on spendPriority, so every preference below has to beat a real
+  # argmax rather than agreeing with one.
+  write_quota "$QUOTA" 0.7597 -0.4627
+
+  rm -f "$prefer"
+  reset_log
+  TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager --json
+  assert_equals clear "$(jq -r .status <<<"$out")" "no preference still resolves"
+  assert_equals agy "$(jq -r .chosen.profile.harness <<<"$out")" "no preference keeps the spendPriority argmax"
+  assert_equals null "$(jq -r '.preference // "null"' <<<"$out")" "no preference reports nothing"
+
+  printf 'implementation=codex\n' > "$prefer"
+  reset_log
+  TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager --json
+  assert_equals clear "$(jq -r .status <<<"$out")" "an applied preference still resolves"
+  assert_equals codex "$(jq -r .chosen.profile.harness <<<"$out")" "the preferred runtime comes first"
+  assert_equals applied "$(jq -r .preference.state <<<"$out")" "the applied preference is reported"
+  assert_equals implementation "$(jq -r .preference.kind <<<"$out")" "the preference names the rule kind it matched"
+  TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager
+  assert_contains "$out" "preference: implementation=codex applied" "the text block states the applied preference"
+
+  # Switching runtimes is one line, which is the whole point of the preference.
+  printf 'implementation=agy\n' > "$prefer"
+  reset_log
+  TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager --json
+  assert_equals agy "$(jq -r .chosen.profile.harness <<<"$out")" "a second preference moves the choice again"
+
+  # A preference the matched rule does not list changes nothing and says so.
+  printf 'implementation=cursor\n' > "$prefer"
+  reset_log
+  TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager --json
+  assert_equals clear "$(jq -r .status <<<"$out")" "an unlisted preference still resolves"
+  assert_equals agy "$(jq -r .chosen.profile.harness <<<"$out")" "an unlisted preference leaves the argmax alone"
+  assert_equals no-op "$(jq -r .preference.state <<<"$out")" "an unlisted preference is reported as a no-op"
+  assert_contains "$(jq -r .preference.reason <<<"$out")" "rule_1 lists no cursor candidate" "the no-op names the rule and runtime"
+
+  # Every gate stays in force: an exhausted preferred runtime loses the work to
+  # the next candidate and the result says why the preference was not usable.
+  printf 'implementation=codex\n' > "$prefer"
+  jq '.providers |= map(if .provider == "codex" then .quotaSemantics.effectiveAvailability[0].runway.status = "exhausted_now" else . end)' \
+    "$QUOTA" > "$TMP_ROOT/quota-exhausted.json"
+  cp "$TMP_ROOT/quota-exhausted.json" "$QUOTA"
+  reset_log
+  TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager --json
+  assert_equals clear "$(jq -r .status <<<"$out")" "an exhausted preference still resolves"
+  assert_equals agy "$(jq -r .chosen.profile.harness <<<"$out")" "the next candidate takes the work"
+  assert_equals not-usable "$(jq -r .preference.state <<<"$out")" "an exhausted preference is reported as unusable"
+  assert_contains "$(jq -r .preference.reason <<<"$out")" "runway exhausted_now" "the unusable preference names the quota reason"
+  TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager
+  assert_contains "$out" "preference: implementation=codex not-usable:" "the text block states an unusable preference"
+  assert_contains "$out" "ranked the remaining candidates by spendPriority" "the text block says what happened instead"
+
+  # An unmeasured preferred runtime is the honest unknown, not a silent stall.
+  jq '.providers |= map(if .provider == "codex" then (.state.status = "unknown" | .quotaSemantics.status = "unknown" | .quotaSemantics.effectiveAvailability = []) else . end)' \
+    "$QUOTA" > "$TMP_ROOT/quota-unmeasured.json"
+  cp "$TMP_ROOT/quota-unmeasured.json" "$QUOTA"
+  reset_log
+  TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager --json
+  assert_equals not-usable "$(jq -r .preference.state <<<"$out")" "an unmeasured preference is reported as unusable"
+  assert_contains "$(jq -r .preference.reason <<<"$out")" unmeasured "the unusable preference names the unmeasured provider"
+  assert_equals agy "$(jq -r .chosen.profile.harness <<<"$out")" "an unmeasured preference never stalls the dispatch"
+
+  # Preferring a runtime whose own window is projected to exhaust is allowed and
+  # warned about, so the operator sees the cost of the call they made.
+  write_quota "$QUOTA" 0.7597 -0.4627
+  reset_log
+  TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager --json
+  assert_equals applied "$(jq -r .preference.state <<<"$out")" "a nearly spent preferred runtime is still applied"
+  assert_contains "$(jq -r '.preference.warn | join(";")' <<<"$out")" "runway projected_exhaustion" "a projected exhaustion warns"
+  assert_contains "$(jq -r '.preference.warn | join(";")' <<<"$out")" "overdrawn against the reset clock" "a negative spendPriority warns"
+  TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager
+  assert_contains "$out" "warning: runway projected_exhaustion" "the text block carries the warning"
+
+  # A rule with no declared kind is unclassified, so no preference applies.
+  jq 'del(.rules[0].kind)' "$RULES" > "$TMP_ROOT/rules-unclassified.json"
+  cp "$TMP_ROOT/rules-unclassified.json" "$RULES"
+  reset_log
+  TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager --json
+  assert_equals clear "$(jq -r .status <<<"$out")" "an unclassified rule still resolves"
+  assert_equals null "$(jq -r '.preference // "null"' <<<"$out")" "an unclassified rule takes no preference"
+  chosen=$(jq -r .chosen.profile.harness <<<"$out")
+  assert_equals agy "$chosen" "an unclassified rule ranks exactly as it did before"
+  pass "the preference reorders a matched rule's candidates without relaxing a gate"
+}
+test_preference
+
+# --- a malformed preference file refuses rather than being selected around ---
+test_preference_malformed() {
+  local prefer="$HOME_DIR/config/dispatch-prefer"
+  cp "$BASE_RULES" "$RULES"
+  printf 'implementation codex\n' > "$prefer"
+  reset_log
+  TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager
+  expect_code 2 "$code" "a malformed preference file is an actionable error"
+  assert_contains "$err" 'malformed preference file' "the refusal names the preference file"
+  assert_equals '' "$out" "a malformed preference file resolves nothing"
+  printf 'implementation=codex\nimplementation=grok\n' > "$prefer"
+  TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager
+  expect_code 2 "$code" "a repeated kind is an actionable error"
+  assert_contains "$err" 'declared more than once' "the refusal names the repeated kind"
+  rm -f "$prefer"
+  pass "a malformed preference file refuses instead of being selected around"
+}
+test_preference_malformed
+
+# --- a malformed rule kind is an actionable configuration error -------------
+test_rule_kind_malformed() {
+  jq '.rules[0].kind = "Implementation Work"' "$BASE_RULES" > "$RULES"
+  reset_log
+  TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager
+  expect_code 2 "$code" "a malformed rule kind is an actionable error"
+  assert_contains "$err" 'kind must be a token matching' "the refusal explains the kind token shape"
+  cp "$BASE_RULES" "$RULES"
+  pass "a malformed rule kind refuses instead of routing"
+}
+test_rule_kind_malformed
+
+# --- the sensitive-path denial re-pick honors the same preference -----------
+# The denial can remove the exact candidate the preference selected, so the
+# re-pick has to land where the preference says rather than on the bare argmax.
+test_preference_survives_free_model_denial() {
+  local prefer="$HOME_DIR/config/dispatch-prefer" sens="$TMP_ROOT/sensitive-pref.md" profile
+  cat > "$RULES" <<'JSON'
+{
+  "rules": [
+    {
+      "when": "Any coding task.",
+      "kind": "mechanical",
+      "use": [
+        {"harness": "opencode", "model": "opencode/glm-5.3-flash-free", "provider": "codex"},
+        {"harness": "codex", "model": "gpt-5.6-sol"},
+        {"harness": "agy", "model": "agy-1", "effort": "high"}
+      ]
+    }
+  ],
+  "default": {"harness": "claude", "model": "opus"}
+}
+JSON
+  cat > "$RESPONSE" <<'JSON'
+{ "model": "jev-1.13.0",
+  "answers": { "rule": { "type": "choice", "choice": "rule_1", "confidence": 0.91,
+    "probabilities": { "rule_1": 0.99, "default": 0.01 } } },
+  "usage": { "input_tokens": 20, "output_tokens": 5 } }
+JSON
+  write_quota "$QUOTA" 0.7597 -0.4627
+  cat > "$sens" <<'MD'
+# Task
+Fix the pager.
+MD
+  printf '\nTarget paths: .env\n' >> "$sens"
+
+  # The free OpenCode model and the preferred Codex model share the codex
+  # provider row, so the preference selects the free model first and the
+  # sensitive path then denies exactly that candidate.
+  printf 'mechanical=opencode\n' > "$prefer"
+  reset_log
+  TYPESAFE_API_KEY=$KEY run code out err "$sens" --project pager --json
+  assert_equals clear "$(jq -r .status <<<"$out")" "the denied preference still resolves"
+  assert_not_equals opencode "$(jq -r .chosen.profile.harness <<<"$out")" "the denied free model is not chosen"
+  assert_equals not-usable "$(jq -r .preference.state <<<"$out")" "the denial marks the preference unusable"
+  assert_contains "$(jq -r .preference.reason <<<"$out")" "denies a free OpenCode model" "the unusable preference names the denial"
+
+  # A preference for a runtime the denial leaves standing still wins the reorder.
+  printf 'mechanical=codex\n' > "$prefer"
+  reset_log
+  TYPESAFE_API_KEY=$KEY run code out err "$sens" --project pager --json
+  assert_equals applied "$(jq -r .preference.state <<<"$out")" "a surviving preference stays applied through the denial"
+  assert_equals codex "$(jq -r .chosen.profile.harness <<<"$out")" "a surviving preference still comes first"
+  rm -f "$prefer"
+  cp "$BASE_RULES" "$RULES"
+  pass "the sensitive-path denial re-pick honors the worker-runtime preference"
+}
+test_preference_survives_free_model_denial

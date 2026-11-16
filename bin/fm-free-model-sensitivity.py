@@ -356,6 +356,21 @@ def apply_resolution(payload: dict) -> bool:
         for item in candidates
         if item.get("eligible") and not item.get("unranked") and isinstance(item.get("spendPriority"), (int, float)) and not isinstance(item.get("spendPriority"), bool)
     ]
+    # The worker-runtime preference reorders the matched rule's candidates, and
+    # the denial above can remove the very candidate it selected. Re-apply the
+    # same reorder here so the re-pick lands where the preference says, and
+    # record the preference as unusable when no preferred candidate survives.
+    # bin/fm-dispatch-resolve.sh owns the rule; this mirrors it only for the
+    # post-denial re-pick, and tests/fm-dispatch-resolve.test.sh drives both.
+    preference = payload.get("preference") or {}
+    if preference.get("state") == "applied":
+        preferred = [item for item in eligible if (item.get("profile") or {}).get("harness") == preference.get("harness")]
+        if preferred:
+            eligible = preferred
+        else:
+            preference["state"] = "not-usable"
+            preference["reason"] = "sensitive target path denies a free OpenCode model"
+            preference.pop("warn", None)
     if not eligible:
         payload["status"] = "escalate"
         payload["reason"] = "sensitive target path denies a free OpenCode model and no other rankable candidate remains"
