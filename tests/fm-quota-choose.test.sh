@@ -819,6 +819,13 @@ if out=$(choose_with_kind implementation "$LAB/kind-malformed.err" claude:claude
 fi
 grep -Fq 'malformed preference file' "$LAB/kind-malformed.err" \
   || fail "a malformed preference file should name itself in the refusal"
+printf 'implementation=codez\n' > "$PREFER_HOME/config/dispatch-prefer"
+if out=$(choose_with_kind implementation "$LAB/kind-unknown.err" claude:claude-3-5-sonnet); then
+  fail "unknown preference harness: expected refusal, got '$out'"
+fi
+[ -z "$out" ] || fail "unknown preference harness must select nothing"
+grep -Fq 'is not a verified harness' "$LAB/kind-unknown.err" \
+  || fail "an unknown preference harness should name the violated contract"
 rm -f "$PREFER_HOME/config/dispatch-prefer"
 ok "--kind refuses a malformed preference file"
 

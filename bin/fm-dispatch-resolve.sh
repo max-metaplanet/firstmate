@@ -541,10 +541,17 @@ if jq -e '.. | objects | select(.harness? == "claude")' "$RULES" >/dev/null; the
   esac
 fi
 
+SENSITIVITY_INPUT=$(jq -c '
+  def profiles($v): if ($v | type) == "array" then $v elif ($v | type) == "object" then [$v] else [] end;
+  {candidates: ([((.rules // [])[]) | profiles(.use)[]] + profiles(.default // null) | map({profile: .}))}
+' "$RULES") || emit_error "free-model sensitivity input failed"
+SENSITIVITY=$(printf '%s\n' "$SENSITIVITY_INPUT" | "$SCRIPT_DIR/fm-free-model-sensitivity.sh" apply-resolution --brief "$BRIEF") ||
+  emit_error "free-model sensitivity check failed"
+
 # ---- resolution: declared gates + quota evidence + argmax, all in jq ------------
 RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg none_criterion "$DEFAULT_WHEN" --argjson pmap "$PMAP" \
   --argjson provenance "$PROVENANCE" --argjson forced "$FORCED" --arg seat_hold "$SEAT_HOLD" --argjson codex_alternative "$CODEX_ALTERNATIVE" \
-  --argjson prefer "$PREFER" \
+  --argjson prefer "$PREFER" --argjson sensitivity "$SENSITIVITY" \
   --slurpfile resp "$RESP_FILE" --slurpfile rules "$RULES" --slurpfile quota "$QUOTA" "$FM_QUOTA_ROW_JQ"'
   ($resp[0]) as $r | ($rules[0]) as $cfg | ($quota[0]) as $q | ($r.answers.rule) as $a |
   def profiles($v): if ($v | type) == "array" then $v elif ($v | type) == "object" then [$v] else [] end;
@@ -574,7 +581,9 @@ RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg non
     $rows | map({scope, status, pct: (.effectivePercentRemaining // null), runway: (.runway.status // null), spendPriority: (.selection.spendPriority // null)});
   def evaluate($c):
     (provider_of($c)) as $p | (lane_of($c)) as $lane |
-    if $c.harness == "claude" and $seat_hold != "" then
+    if any($sensitivity.candidates[]; .profile == $c and .eligible == false) then
+      {profile: $c, provider: $p, eligible: false, reason: "sensitive target path denies a free OpenCode model"}
+    elif $c.harness == "claude" and $seat_hold != "" then
       {profile: $c, provider: $p, eligible: false, reason: ("Claude seat dispatch held: " + $seat_hold)}
     elif $p == null then {profile: $c, eligible: false, reason: "no provider family for harness \($c.harness); declare provider on the profile"}
     elif prov($p; $lane) == null then
@@ -747,12 +756,6 @@ RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg non
       end
     end
   end') || emit_error "resolution failed"
-
-# The classifier has already chosen. A sensitive target path still cannot
-# keep a free OpenCode model, whatever that choice was.
-if ! RESULT=$(printf '%s\n' "$RESULT" | "$SCRIPT_DIR/fm-free-model-sensitivity.sh" apply-resolution --brief "$BRIEF"); then
-  emit_error "free-model sensitivity check failed"
-fi
 
 if [ "$JSON_OUTPUT" = 1 ]; then
   printf '%s\n' "$RESULT"

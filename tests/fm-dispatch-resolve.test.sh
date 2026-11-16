@@ -1663,6 +1663,11 @@ test_preference_malformed() {
   TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager
   expect_code 2 "$code" "a repeated kind is an actionable error"
   assert_contains "$err" 'declared more than once' "the refusal names the repeated kind"
+  printf 'implementation=codez\n' > "$prefer"
+  TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager
+  expect_code 2 "$code" "an unknown preference harness is an actionable error"
+  assert_contains "$err" 'is not a verified harness' "the refusal names the invalid runtime"
+  assert_equals '' "$out" "an unknown preference harness resolves nothing"
   rm -f "$prefer"
   pass "a malformed preference file refuses instead of being selected around"
 }
@@ -1731,6 +1736,44 @@ MD
   TYPESAFE_API_KEY=$KEY run code out err "$sens" --project pager --json
   assert_equals applied "$(jq -r .preference.state <<<"$out")" "a surviving preference stays applied through the denial"
   assert_equals codex "$(jq -r .chosen.profile.harness <<<"$out")" "a surviving preference still comes first"
+  jq '.rules[0].use = [.rules[0].use[0], (.rules[0].use[0] | .model = "opencode/second-free"), .rules[0].use[1]]' "$RULES" > "$TMP_ROOT/tied-free.json"
+  cp "$TMP_ROOT/tied-free.json" "$RULES"
+  printf 'mechanical=opencode\n' > "$prefer"
+  TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager --json
+  assert_equals escalate "$(jq -r .status <<<"$out")" "ordinary targets preserve the genuine preferred tie"
+  assert_equals applied "$(jq -r .preference.state <<<"$out")" "the tied runtime preference applies before denial"
+  TYPESAFE_API_KEY=$KEY run code out err "$sens" --project pager --json
+  assert_equals clear "$(jq -r .status <<<"$out")" "sensitivity removes the preferred tie before ranking"
+  assert_equals codex "$(jq -r .chosen.profile.harness <<<"$out")" "the eligible Codex fallback survives the preferred tie"
+  assert_equals not-usable "$(jq -r .preference.state <<<"$out")" "all denied preferred candidates make the preference unusable"
+  rm -f "$prefer"
+  TYPESAFE_API_KEY=$KEY run code out err "$sens" --project pager --json
+  assert_equals clear "$(jq -r .status <<<"$out")" "denial also resolves a tie without a preference"
+  assert_equals codex "$(jq -r .chosen.profile.harness <<<"$out")" "unpreferred ranking uses only surviving candidates"
+  printf 'mechanical=opencode\n' > "$prefer"
+  jq '.rules[0].use += [{harness: "opencode", model: "paid-model", provider: "codex"}]' "$TMP_ROOT/tied-free.json" > "$RULES"
+  TYPESAFE_API_KEY=$KEY run code out err "$sens" --project pager --json
+  assert_equals clear "$(jq -r .status <<<"$out")" "a paid preferred sibling remains rankable"
+  assert_equals paid-model "$(jq -r .chosen.profile.model <<<"$out")" "the paid preferred sibling wins"
+  assert_equals applied "$(jq -r .preference.state <<<"$out")" "a surviving preferred sibling keeps the preference applied"
+  jq '.rules[0].use += [{harness: "codex", model: "another-model"}, {harness: "opencode", model: "paid-model", provider: "agy"}]' "$TMP_ROOT/tied-free.json" > "$RULES"
+  TYPESAFE_API_KEY=$KEY run code out err "$sens" --project pager --codex-alternative --json
+  assert_equals escalate "$(jq -r .status <<<"$out")" "Codex-only relaunch preserves a tie between Codex profiles"
+  assert_equals 'genuine spendPriority tie' "$(jq -r .reason <<<"$out")" "denial never selects a higher ranked non-Codex alternative"
+  jq '.rules[0].use |= map(select(.harness == "opencode"))' "$TMP_ROOT/tied-free.json" > "$RULES"
+  TYPESAFE_API_KEY=$KEY run code out err "$sens" --project pager --json
+  assert_equals escalate "$(jq -r .status <<<"$out")" "all denied candidates still escalate"
+  assert_equals null "$(jq -r .chosen <<<"$out")" "all denied candidates produce no profile"
+  jq '.rules[0].approval = "captain"' "$TMP_ROOT/tied-free.json" > "$RULES"
+  TYPESAFE_API_KEY=$KEY run code out err "$sens" --project pager --json
+  assert_equals escalate "$(jq -r .status <<<"$out")" "sensitive targets preserve the approval refusal"
+  assert_contains "$(jq -r .reason <<<"$out")" 'explicit approval' "approval remains the escalation reason"
+  cp "$TMP_ROOT/tied-free.json" "$RULES"
+  jq '.answers.rule.confidence = 0.1' "$RESPONSE" > "$TMP_ROOT/low-confidence.json"
+  cp "$TMP_ROOT/low-confidence.json" "$RESPONSE"
+  TYPESAFE_API_KEY=$KEY run code out err "$sens" --project pager --json
+  assert_equals ambiguous "$(jq -r .status <<<"$out")" "sensitive targets preserve the confidence refusal"
+  assert_equals null "$(jq -r .chosen <<<"$out")" "low confidence never produces a profile"
   rm -f "$prefer"
   cp "$BASE_RULES" "$RULES"
   pass "the sensitive-path denial re-pick honors the worker-runtime preference"

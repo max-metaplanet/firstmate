@@ -345,48 +345,7 @@ def apply_resolution(payload: dict) -> bool:
             candidate.pop("unranked", None)
             candidate["reason"] = "sensitive target path denies a free OpenCode model"
             denied = True
-    if not denied:
-        return False
-    chosen = payload.get("chosen") or {}
-    chosen_profile = chosen.get("profile") or {}
-    if not is_free_opencode(chosen_profile.get("harness"), chosen_profile.get("model")):
-        return True
-    eligible = [
-        item
-        for item in candidates
-        if item.get("eligible") and not item.get("unranked") and isinstance(item.get("spendPriority"), (int, float)) and not isinstance(item.get("spendPriority"), bool)
-    ]
-    # The worker-runtime preference reorders the matched rule's candidates, and
-    # the denial above can remove the very candidate it selected. Re-apply the
-    # same reorder here so the re-pick lands where the preference says, and
-    # record the preference as unusable when no preferred candidate survives.
-    # bin/fm-dispatch-resolve.sh owns the rule; this mirrors it only for the
-    # post-denial re-pick, and tests/fm-dispatch-resolve.test.sh drives both.
-    preference = payload.get("preference") or {}
-    if preference.get("state") == "applied":
-        preferred = [item for item in eligible if (item.get("profile") or {}).get("harness") == preference.get("harness")]
-        if preferred:
-            eligible = preferred
-        else:
-            preference["state"] = "not-usable"
-            preference["reason"] = "sensitive target path denies a free OpenCode model"
-            preference.pop("warn", None)
-    if not eligible:
-        payload["status"] = "escalate"
-        payload["reason"] = "sensitive target path denies a free OpenCode model and no other rankable candidate remains"
-        payload.pop("chosen", None)
-        return True
-    best = max(item.get("spendPriority") for item in eligible)
-    tops = [item for item in eligible if item.get("spendPriority") == best]
-    if len(tops) > 1:
-        payload["status"] = "escalate"
-        payload["reason"] = "genuine spendPriority tie"
-        payload.pop("chosen", None)
-        return True
-    payload["status"] = "clear"
-    payload.pop("reason", None)
-    payload["chosen"] = tops[0]
-    return True
+    return denied
 
 
 NET_SYSCALLS = {

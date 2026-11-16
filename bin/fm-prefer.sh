@@ -42,8 +42,6 @@ RULES="$CONFIG/crew-dispatch.json"
 
 # shellcheck source=bin/fm-prefer-lib.sh
 . "$SCRIPT_DIR/fm-prefer-lib.sh"
-# shellcheck source=bin/fm-control-lib.sh
-. "$SCRIPT_DIR/fm-control-lib.sh"
 
 die() { printf 'error: %s\n' "$1" >&2; exit 2; }
 usage() {
@@ -112,11 +110,11 @@ push_to_secondmates() {
 }
 
 cmd_set() {
-  local kind=$1 harness=$2 push=$3 existing='' line raw current rc=0
+  local kind=$1 harness=$2 push=$3 existing='' line raw key current rc=0
   fm_prefer_token_valid "$kind" || die "invalid kind: $kind (expected $FM_PREFER_TOKEN_RE)"
   if [ "$harness" != auto ]; then
     fm_prefer_token_valid "$harness" || die "invalid harness: $harness (expected $FM_PREFER_TOKEN_RE, or auto)"
-    fm_control_harnesses | grep -qxF "$harness" ||
+    fm_control_harness_supported "$harness" ||
       die "$harness is not a verified harness; run bin/fm-control.sh harnesses for the list"
   fi
   current=$(fm_prefer_json "$CONFIG") || die "$current"
@@ -129,7 +127,9 @@ cmd_set() {
     existing=$(while IFS= read -r line || [ -n "$line" ]; do
       raw=${line%$'\r'}
       raw=${raw#"${raw%%[![:space:]]*}"}
-      case "${raw%%=*}" in
+      key=${raw%%=*}
+      key=${key%"${key##*[![:space:]]}"}
+      case "$key" in
         "$kind") continue ;;
       esac
       printf '%s\n' "$line"
@@ -138,7 +138,7 @@ cmd_set() {
   {
     [ -z "$existing" ] || printf '%s\n' "$existing"
     [ "$harness" = auto ] || printf '%s=%s\n' "$kind" "$harness"
-  } | write_file
+  } | write_file || return 2
 
   if [ "$harness" = auto ]; then
     printf 'no preference for %s\n' "$kind"

@@ -20,6 +20,9 @@
 # explicit per-task override. Consumers own their own application of that
 # reorder; this library only parses.
 
+# shellcheck source=bin/fm-control-lib.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-control-lib.sh"
+
 FM_PREFER_FILE_NAME="dispatch-prefer"
 
 # The token shape shared by a kind and a harness value, matching the provider-id
@@ -89,6 +92,10 @@ fm_prefer_json() {
       { printf 'line %s: kind must match %s\n' "$lineno" "$FM_PREFER_TOKEN_RE"; return 1; }
     fm_prefer_token_valid "$harness" ||
       { printf 'line %s: harness must match %s, or be auto\n' "$lineno" "$FM_PREFER_TOKEN_RE"; return 1; }
+    if [ "$harness" != auto ] && ! fm_control_harness_supported "$harness"; then
+      printf 'line %s: %s is not a verified harness\n' "$lineno" "$harness"
+      return 1
+    fi
     if jq -e --arg kind "$kind" 'has($kind)' <<<"$json" >/dev/null 2>&1; then
       printf 'line %s: kind %s is declared more than once\n' "$lineno" "$kind"
       return 1

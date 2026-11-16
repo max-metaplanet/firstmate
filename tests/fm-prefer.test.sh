@@ -137,6 +137,26 @@ fm_prefer_token_valid "$newline_kind" &&
   fail "a token with a trailing newline must not validate"
 run code out err set "$newline_kind" codex --no-push
 expect_code 2 "$code" "a kind with a trailing newline is refused"
+run code out err set implementation grok --no-push
+expect_code 0 "$code" "a spaced key can be replaced"
+assert_equals '{"quick-fix":"grok","implementation":"grok"}' \
+  "$(fm_prefer_json "$HOME_DIR/config")" "replacement normalizes the key without duplicating it"
+assert_contains "$(cat "$PREFER")" '# comments and blank lines are ignored' "replacement preserves comments"
+printf '  implementation \t= codex\r\nquick-fix=grok\n' > "$PREFER"
+run code out err set implementation auto --no-push
+expect_code 0 "$code" "a spaced key can be removed"
+assert_equals '{"quick-fix":"grok"}' "$(fm_prefer_json "$HOME_DIR/config")" "auto removes the spaced key and preserves its sibling"
+printf 'implementation=codez\n' > "$PREFER"
+run code out err show
+expect_code 2 "$code" "show refuses an unknown harness in persisted configuration"
+assert_contains "$err" 'is not a verified harness' "the parser explains the harness refusal"
+run code out err set quick-fix codex --no-push
+expect_code 2 "$code" "set refuses an existing unknown harness"
+assert_equals 'implementation=codez' "$(cat "$PREFER")" "refused updates leave the persisted file intact"
+if out=$(fm_prefer_for_kind "$HOME_DIR/config" implementation); then
+  fail "kind lookup must refuse an unknown harness"
+fi
+assert_contains "$out" 'is not a verified harness' "kind lookup uses the same validation"
 pass "the documented file format parses exactly as documented"
 
 # --- clear removes every preference -----------------------------------------
@@ -163,6 +183,29 @@ PUSH_BIN="$TMP_ROOT/push-bin"
 mkdir -p "$PUSH_BIN"
 cp "$ROOT/bin/fm-prefer.sh" "$ROOT/bin/fm-prefer-lib.sh" "$ROOT/bin/fm-control-lib.sh" "$PUSH_BIN/"
 cp "$FAKEBIN/fm-config-push.sh" "$PUSH_BIN/"
+
+FAIL_BIN="$TMP_ROOT/fail-bin"
+mkdir -p "$FAIL_BIN"
+for fail_command in mktemp cat chmod mv; do
+  real_command=$(command -v "$fail_command")
+  printf '#!/usr/bin/env bash\n[ "${PREFER_FAIL_COMMAND:-}" != %q ] || exit 1\nexec %q "$@"\n' \
+    "$fail_command" "$real_command" > "$FAIL_BIN/$fail_command"
+  chmod +x "$FAIL_BIN/$fail_command"
+done
+for fail_command in mktemp cat chmod mv; do
+  printf 'implementation=codex\n' > "$PREFER"
+  : > "$PUSH_LOG"
+  out=$(PATH="$FAIL_BIN:$PATH" PREFER_FAIL_COMMAND="$fail_command" \
+    FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE="$ROOT" PUSH_LOG="$PUSH_LOG" \
+    "$PUSH_BIN/fm-prefer.sh" set implementation grok 2> "$TMP_ROOT/stderr")
+  code=$?
+  expect_code 2 "$code" "$fail_command failure refuses the update"
+  assert_equals '' "$out" "$fail_command failure reports no success or convergence"
+  assert_contains "$(cat "$TMP_ROOT/stderr")" 'error: cannot' "$fail_command failure explains the refused write"
+  assert_equals 'implementation=codex' "$(cat "$PREFER")" "$fail_command failure preserves the old preference"
+  assert_equals '' "$(cat "$PUSH_LOG")" "$fail_command failure never propagates the old preference"
+done
+pass "every write failure stops before success output and propagation"
 
 : > "$PUSH_LOG"
 out=$(FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE="$ROOT" PUSH_LOG="$PUSH_LOG" \
