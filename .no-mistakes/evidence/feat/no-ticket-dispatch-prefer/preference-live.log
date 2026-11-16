@@ -1,0 +1,293 @@
+
+SCENARIO: one command immediately switches typed and worker dispatch
+prefer codex for implementation
+  rule_1 declares kind=implementation and lists codex
+converging secondmate homes:
+config-push: no live secondmate homes found
+preference file: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7KAN5M9MX5QB73Z39Y2QPHK/.prefer-live.KOExC4/primary/config/dispatch-prefer
+prefer codex for implementation
+  rule_1 declares kind=implementation and lists codex
+declared rule kinds in ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7KAN5M9MX5QB73Z39Y2QPHK/.prefer-live.KOExC4/primary/config/crew-dispatch.json:
+  rule_1: implementation
+{
+  "status": "clear",
+  "chosen": {
+    "profile": {
+      "harness": "codex",
+      "model": "gpt-5.6-sol"
+    },
+    "provider": "codex",
+    "bounds": [
+      {
+        "scope": "all_models",
+        "status": "known",
+        "pct": 75,
+        "runway": "through_reset",
+        "spendPriority": 0.2
+      }
+    ],
+    "scope": "all_models",
+    "pct": 75,
+    "spendPriority": 0.2,
+    "runway": "through_reset",
+    "eligible": true,
+    "reason": "ok"
+  },
+  "preference": {
+    "kind": "implementation",
+    "harness": "codex",
+    "state": "applied"
+  },
+  "decided_by": "path-forced"
+}
+quota-choose: preference implementation=codex moved 1 candidate(s) first
+worker selection: codex gpt-5.6-sol
+prefer grok for implementation
+  rule_1 declares kind=implementation and lists grok
+converging secondmate homes:
+config-push: no live secondmate homes found
+{
+  "status": "clear",
+  "chosen": {
+    "profile": {
+      "harness": "grok",
+      "model": "grok-4.7"
+    },
+    "provider": "grok",
+    "bounds": [
+      {
+        "scope": "all_models",
+        "status": "known",
+        "pct": 75,
+        "runway": "through_reset",
+        "spendPriority": 0.8
+      }
+    ],
+    "scope": "all_models",
+    "pct": 75,
+    "spendPriority": 0.8,
+    "runway": "through_reset",
+    "eligible": true,
+    "reason": "ok"
+  },
+  "preference": {
+    "kind": "implementation",
+    "harness": "grok",
+    "state": "applied"
+  },
+  "decided_by": "path-forced"
+}
+quota-choose: preference implementation=grok moved 1 candidate(s) first
+worker selection: grok grok-4.7
+
+SCENARIO: spaced persisted key is replaced without duplication
+prefer grok for implementation
+  rule_1 declares kind=implementation and lists grok
+converging secondmate homes:
+config-push: no live secondmate homes found
+implementation=grok
+
+SCENARIO: preference cannot override exhausted quota or add a candidate
+prefer codex for implementation
+  rule_1 declares kind=implementation and lists codex
+converging secondmate homes:
+config-push: no live secondmate homes found
+{
+  "status": "clear",
+  "chosen": {
+    "profile": {
+      "harness": "grok",
+      "model": "grok-4.7"
+    },
+    "provider": "grok",
+    "bounds": [
+      {
+        "scope": "all_models",
+        "status": "known",
+        "pct": 75,
+        "runway": "through_reset",
+        "spendPriority": 0.8
+      }
+    ],
+    "scope": "all_models",
+    "pct": 75,
+    "spendPriority": 0.8,
+    "runway": "through_reset",
+    "eligible": true,
+    "reason": "ok"
+  },
+  "preference": {
+    "kind": "implementation",
+    "harness": "codex",
+    "state": "not-usable",
+    "reason": "runway exhausted_now at all_models"
+  },
+  "decided_by": "path-forced"
+}
+quota-choose: preference implementation=codex moved 1 candidate(s) first
+worker selection: grok grok-4.7
+prefer cursor for implementation
+  rule_1 declares kind=implementation but lists only codex,grok
+  no rule declaring kind=implementation lists cursor, so this preference is a no-op for those rules
+converging secondmate homes:
+config-push: no live secondmate homes found
+{
+  "status": "clear",
+  "chosen": {
+    "profile": {
+      "harness": "grok",
+      "model": "grok-4.7"
+    },
+    "provider": "grok",
+    "bounds": [
+      {
+        "scope": "all_models",
+        "status": "known",
+        "pct": 75,
+        "runway": "through_reset",
+        "spendPriority": 0.8
+      }
+    ],
+    "scope": "all_models",
+    "pct": 75,
+    "spendPriority": 0.8,
+    "runway": "through_reset",
+    "eligible": true,
+    "reason": "ok"
+  },
+  "preference": {
+    "kind": "implementation",
+    "harness": "cursor",
+    "state": "no-op",
+    "reason": "rule_1 lists no cursor candidate"
+  },
+  "decided_by": "path-forced"
+}
+
+SCENARIO: auto restores quota ranking and clear removes the preference
+no preference for implementation
+converging secondmate homes:
+config-push: no live secondmate homes found
+{
+  "status": "clear",
+  "chosen": {
+    "profile": {
+      "harness": "grok",
+      "model": "grok-4.7"
+    },
+    "provider": "grok",
+    "bounds": [
+      {
+        "scope": "all_models",
+        "status": "known",
+        "pct": 75,
+        "runway": "through_reset",
+        "spendPriority": 0.8
+      }
+    ],
+    "scope": "all_models",
+    "pct": 75,
+    "spendPriority": 0.8,
+    "runway": "through_reset",
+    "eligible": true,
+    "reason": "ok"
+  },
+  "preference": null,
+  "decided_by": "path-forced"
+}
+no preference declared; every kind resolves exactly as it does with no preference
+converging secondmate homes:
+config-push: no live secondmate homes found
+
+SCENARIO: malformed preferences and removed local-only option fail closed
+error: line 2: kind implementation is declared more than once
+error: malformed preference file: line 2: kind implementation is declared more than once
+error: unknown flag --no-push
+
+SCENARIO: unresolved home fails set, auto and clear while keeping local changes
+prefer codex for implementation
+  rule_1 declares kind=implementation and lists codex
+converging secondmate homes:
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+config-push: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7KAN5M9MX5QB73Z39Y2QPHK/.prefer-live.KOExC4/primary -> live secondmate homes
+secondmate legacy: skipped - no home= in ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7KAN5M9MX5QB73Z39Y2QPHK/.prefer-live.KOExC4/primary/state/legacy.meta and no registry home
+warning: the local preference is set, but at least one secondmate home did not take it; run bin/fm-config-push.sh once that host is reachable
+exit=1
+no preference for implementation
+converging secondmate homes:
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+config-push: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7KAN5M9MX5QB73Z39Y2QPHK/.prefer-live.KOExC4/primary -> live secondmate homes
+secondmate legacy: skipped - no home= in ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7KAN5M9MX5QB73Z39Y2QPHK/.prefer-live.KOExC4/primary/state/legacy.meta and no registry home
+warning: the local preference is set, but at least one secondmate home did not take it; run bin/fm-config-push.sh once that host is reachable
+exit=1
+no preference declared; every kind resolves exactly as it does with no preference
+converging secondmate homes:
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+config-push: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7KAN5M9MX5QB73Z39Y2QPHK/.prefer-live.KOExC4/primary -> live secondmate homes
+secondmate legacy: skipped - no home= in ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7KAN5M9MX5QB73Z39Y2QPHK/.prefer-live.KOExC4/primary/state/legacy.meta and no registry home
+warning: the local preference is set, but at least one secondmate home did not take it; run bin/fm-config-push.sh once that host is reachable
+exit=1
+
+SCENARIO: inherited preference is consumed by a second home; unchanged converges
+prefer grok for implementation
+  rule_1 declares kind=implementation and lists grok
+converging secondmate homes:
+config-push: no live secondmate homes found
+dispatch-prefer	pushed	
+preference file: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7KAN5M9MX5QB73Z39Y2QPHK/.prefer-live.KOExC4/second/config/dispatch-prefer
+prefer grok for implementation
+  rule_1 declares kind=implementation and lists grok
+declared rule kinds in ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7KAN5M9MX5QB73Z39Y2QPHK/.prefer-live.KOExC4/second/config/crew-dispatch.json:
+  rule_1: implementation
+quota-choose: preference implementation=grok moved 1 candidate(s) first
+second-home worker selection: grok grok-4.7
+dispatch-prefer	unchanged	
+preference file: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7KAN5M9MX5QB73Z39Y2QPHK/.prefer-live.KOExC4/second/config/dispatch-prefer
+prefer grok for implementation
+  rule_1 declares kind=implementation and lists grok
+declared rule kinds in ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7KAN5M9MX5QB73Z39Y2QPHK/.prefer-live.KOExC4/second/config/crew-dispatch.json:
+  rule_1: implementation
+quota-choose: preference implementation=grok moved 1 candidate(s) first
+second-home worker selection: grok grok-4.7
+
+SCENARIO: refused inherited copy/removal fails and preserves destination
+prefer codex for implementation
+  rule_1 declares kind=implementation and lists codex
+converging secondmate homes:
+config-push: no live secondmate homes found
+fm-config-inherit: warning: skipped dispatch-prefer for ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7KAN5M9MX5QB73Z39Y2QPHK/.prefer-live.KOExC4/second/config: destination does not allow inherited item (not gitignored or guard failed)
+dispatch-prefer	skipped	destination does not allow inherited item (not gitignored or guard failed)
+inheritance exit=1; destination=implementation=grok
+no preference for implementation
+converging secondmate homes:
+config-push: no live secondmate homes found
+fm-config-inherit: warning: skipped dispatch-prefer for ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7KAN5M9MX5QB73Z39Y2QPHK/.prefer-live.KOExC4/second/config: destination does not allow inherited item (not gitignored or guard failed)
+dispatch-prefer	skipped	destination does not allow inherited item (not gitignored or guard failed)
+inheritance exit=1; destination=implementation=grok
+no preference declared; every kind resolves exactly as it does with no preference
+converging secondmate homes:
+config-push: no live secondmate homes found
+fm-config-inherit: warning: skipped dispatch-prefer for ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7KAN5M9MX5QB73Z39Y2QPHK/.prefer-live.KOExC4/second/config: destination does not allow inherited item (not gitignored or guard failed)
+dispatch-prefer	skipped	destination does not allow inherited item (not gitignored or guard failed)
+inheritance exit=1; destination=implementation=grok
+
+SCENARIO: remote receiver publishes, reads back, preserves unchanged and removes preference
+pushed: config/dispatch-prefer
+preference file: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7KAN5M9MX5QB73Z39Y2QPHK/.prefer-live.KOExC4/remote/config/dispatch-prefer
+prefer grok for implementation
+  no rule in ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7KAN5M9MX5QB73Z39Y2QPHK/.prefer-live.KOExC4/remote/config/crew-dispatch.json declares kind=implementation, so this preference is a no-op until one does
+unchanged: config/dispatch-prefer
+preference file: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7KAN5M9MX5QB73Z39Y2QPHK/.prefer-live.KOExC4/remote/config/dispatch-prefer
+prefer grok for implementation
+  no rule in ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7KAN5M9MX5QB73Z39Y2QPHK/.prefer-live.KOExC4/remote/config/crew-dispatch.json declares kind=implementation, so this preference is a no-op until one does
+removed: config/dispatch-prefer
+preference file: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7KAN5M9MX5QB73Z39Y2QPHK/.prefer-live.KOExC4/remote/config/dispatch-prefer
+no preference declared; every kind resolves exactly as it does with no preference
+
+All disposable product checks completed.
