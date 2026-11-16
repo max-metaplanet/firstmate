@@ -281,6 +281,8 @@ destination_allows_inherited_item() {
 # file, one tab-separated line per item is appended there:
 #   <item> <status> <reason>
 # Status is pushed, unchanged, skipped, or error.
+# Returns non-zero on propagation errors or a skipped dispatch-prefer item;
+# other guard skips remain warnings. An unchanged item is successful convergence.
 record_inheritable_config_result() {
   local item=$1 status=$2 reason=${3:-}
   if [ "$item" = firstmate-role ] && [ -n "${FM_INHERIT_DEST_CONFIG:-}" ]; then

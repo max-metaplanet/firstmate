@@ -316,7 +316,7 @@ RULE_COUNT=$(jq -r '(.rules // []) | length' "$RULES")
 # actionable error, never a preference quietly dropped from the selection.
 PREFER=$(fm_prefer_json "$CONFIG") || die "malformed preference file: $PREFER"
 # A relaunch offer already fixes the harness it ranks, so a preference for
-# another runtime has nothing to reorder there and is deliberately not read.
+# another runtime has nothing to reorder there and is deliberately not applied.
 [ "$CODEX_ALTERNATIVE" = false ] || PREFER='{}'
 
 emit_error() {

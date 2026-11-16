@@ -23,7 +23,7 @@ The [worker helper](../../../bin/fm-quota-choose.sh) and [typed resolver](../../
 
 The canonical shell helper for a worker that has already performed its model-selection reasoning and now needs to pick the first viable candidate is `bin/fm-quota-choose.sh`.
 Pass it the intake's already-captured default TOON or permitted JSON fallback through stdin or `--snapshot`; it never takes another quota snapshot, so it selects from the same quota state as the intake.
-Pass each candidate as `harness:model`, with earlier candidates preferred.
+Pass each candidate as `harness:model`; the helper's header owns ordering, including its optional work-kind preference.
 The helper's header owns its provider mapping and quota selection mechanics.
 An `exhausted_now` runway vetoes the candidate.
 The helper selects a candidate only when its applicable quota has a known `effectivePercentRemaining` greater than zero.
@@ -135,11 +135,11 @@ Report its outcome in the candidate accounting, in one of three shapes:
 - A no-op, when the matched rule lists no candidate on that runtime.
   Say so rather than dropping it silently.
 
-`bin/fm-quota-choose.sh --kind <kind>` applies this same reorder to an already-ordered worker-side candidate list, and the [typed resolver](../../../docs/configuration.md#typed-dispatch-resolution-env-typesafe_api_key) applies it in code and prints it on a `preference:` line.
+The [worker helper's header](../../../bin/fm-quota-choose.sh) and [typed resolver](../../../docs/configuration.md#typed-dispatch-resolution-env-typesafe_api_key) own their respective preference application and reporting.
 
 ## Rank by spendPriority
 
-Among candidates that pass all three gates, pick the highest known `spendPriority`.
+Within the ranking pool established by "Worker-runtime preference, before the ranking" above, pick the highest known `spendPriority`.
 A higher known scalar is better: positive means paid allowance is on track to reach reset unused, `0` is exact utilization, and negative means overdrawn against the reset clock.
 Rank only from comparable known scalars.
 Never treat absent, `unknown`, or unmeasurable `spendPriority` as zero or as healthy; `0` means exact utilization, a different claim from unknown.

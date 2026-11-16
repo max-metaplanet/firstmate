@@ -2060,11 +2060,9 @@ That is its entire effect.
 When the preferred runtime is not usable, the next candidate takes the work by the ordinary `spendPriority` ranking and the selection states plainly that the preference was not usable and why.
 A preference naming a runtime the matched rule does not list is a no-op for that rule and says so rather than passing silently; `bin/fm-prefer.sh set` and `show` report that same no-op at the moment you write it, before any task meets it.
 
-**File format**
+**File example**
 
-One `kind=harness` line per kind of work, where `kind` matches a rule's declared `kind` and `harness` names a verified harness.
-`auto` means no preference for that kind and is the same as omitting the line.
-Blank lines and `#` comment lines are ignored, whitespace around `=` is trimmed, and a kind may appear at most once.
+The [`fm-prefer-lib.sh` header](../bin/fm-prefer-lib.sh) owns the accepted syntax and validation rules.
 
 ```text
 # which runtime is preferred, by kind of work
@@ -2072,7 +2070,8 @@ implementation=codex
 investigation=grok
 ```
 
-A malformed file is an actionable configuration error: `bin/fm-prefer.sh` and every consumer refuse and name the bad line rather than dropping the preference and routing anyway.
+A malformed file is an actionable configuration error: `set`, `show`, and consumers that read the preference refuse with a diagnostic rather than dropping it and routing anyway.
+`clear` can remove a malformed file.
 
 **Which paths honor it**
 
@@ -2095,6 +2094,7 @@ An honest unknown is the outcome there, never a guessed number: a Codex lane aut
 A failed convergence never undoes this home's change: the command exits non-zero, reports that at least one home did not take the local preference, and names `bin/fm-config-push.sh` to run once that host is reachable.
 `bin/fm-config-push.sh` owns the per-home convergence report.
 A host that is not a registered secondmate route of this home receives nothing, because there is no supported route to it; register it under [Secondmate routes](#secondmate-routes-datasecondmatesmd) first.
+Read a remote home's preference back with `bin/fm-on.sh <secondmate-id> fm-prefer.sh show`; `telos64` can replace the id when that SSH alias selects exactly one registered route.
 
 ## Typed dispatch resolution (.env TYPESAFE_API_KEY)
 
@@ -2122,7 +2122,7 @@ Those declared paths are the only paths the resolver reads: it never scans a bri
 When one declared path matches the resolver's deployment-configuration list - `vercel.json`, `*.tf` and `*.tfvars`, CloudFormation templates (including `template.yaml`, `template.yml`, and `*.template`, `*.template.json`, and `*.template.yaml`), Kubernetes, ArgoCD (under an `argocd/`, `argo-cd/`, or `argo/` directory), ingress, and Helm manifests, deploy scripts (`scripts/deploy*`, `*deploy*.sh`, `*deploy*.ps1`), and deploy, release, or publish workflows under `.github/workflows/`, as [`bin/fm-dispatch-resolve.sh`](../bin/fm-dispatch-resolve.sh) enumerates them in one place - the rule declaring `path_force` is selected in code with no request to Jev.
 A match forces the declared rule because that is the safe direction, so the list carries no exclusions and a path under `tests/` that names a deploy script still forces; a documentation page or a UI `charts/` component that merely reads like deployment work does not match and changes nothing.
 A forced result replaces the model, confidence, and probability lines with `decided_by: path-forced`, the forced rule and its `when` excerpt, and `forced_path`/`forced_pattern`, so a forced route is never mistaken for a classified one; a result without a `decided_by:` line was decided by the model.
-Everything after the rule choice is identical: the rule's `approval` and `floor`, each candidate's `provider` and `floor`, the same `quota-axi` snapshot, and the same `spendPriority` argmax.
+Everything after the rule choice uses the same checks and ranking described below under "Checks performed after the answer".
 Without a rule declaring `path_force` this check is inert, whatever paths a brief declares.
 A brief with no `Target paths:` line, no matching path, or a home whose rules declare no `path_force` leaves the Jev request and its output unchanged, so only some briefs carry this fact and the rest route exactly as before.
 After that classification, a declared target path in a sensitive class cannot resolve to a free OpenCode model.
@@ -2198,7 +2198,7 @@ After the answer, code applies all remaining checks and ranking:
 - The confidence floor and the matched rule's `approval` and `floor`.
 - Each candidate's `provider` and `floor`.
 - Every applicable account-wide and model/product row from one `quota-axi --json` snapshot.
-- The numeric `spendPriority` argmax over candidates, using each candidate's limiting row.
+- Ranking from each candidate's limiting row, subject to the [worker runtime preference](#worker-runtime-preference-configdispatch-prefer) contract above.
 - The [Claude seat dispatch gate](claude-seats.md#switching-automatically), using a separate bounded read of the active seat rather than the ambient Claude ranking row.
   A held Claude candidate is ineligible, and configured alternatives such as Codex remain subject to the existing quota and approval gates.
   A matched rule offers only its own candidates, so a Claude-only rule stays held; a below-floor rule still falls through to the default, whose Claude profiles are held the same way.
