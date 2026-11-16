@@ -280,9 +280,7 @@ destination_allows_inherited_item() {
 # absence on both sides is a no-op. When FM_CONFIG_INHERIT_REPORT points at a writable
 # file, one tab-separated line per item is appended there:
 #   <item> <status> <reason>
-# Status is pushed, unchanged, skipped, or error. Skipped items are warnings and
-# do not affect the exit code. Returns non-zero only when a real propagation
-# error, such as copy or remove failure, occurs.
+# Status is pushed, unchanged, skipped, or error.
 record_inheritable_config_result() {
   local item=$1 status=$2 reason=${3:-}
   if [ "$item" = firstmate-role ] && [ -n "${FM_INHERIT_DEST_CONFIG:-}" ]; then
@@ -807,6 +805,7 @@ propagate_inheritable_config() {
         reason=$(inheritable_config_skip_reason)
         warn_inheritable_config_skip "$item" "$dest_config" "$reason"
         record_inheritable_config_result "$item" skipped "$reason"
+        if [ "$item" = dispatch-prefer ]; then rc=1; fi
         continue
       fi
       if [ -L "$dest" ] || [ ! -f "$dest" ] || ! cmp -s "$src" "$dest"; then
@@ -831,6 +830,7 @@ propagate_inheritable_config() {
         reason=$(inheritable_config_skip_reason)
         warn_inheritable_config_skip "$item" "$dest_config" "$reason"
         record_inheritable_config_result "$item" skipped "$reason"
+        if [ "$item" = dispatch-prefer ]; then rc=1; fi
         continue
       fi
       # Primary has no value for this item: mirror the absence downstream.

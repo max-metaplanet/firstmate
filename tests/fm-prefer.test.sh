@@ -23,6 +23,14 @@ cp "$ROOT/bin/fm-prefer.sh" "$ROOT/bin/fm-prefer-lib.sh" "$ROOT/bin/fm-control-l
 cat > "$PUSH_BIN/fm-config-push.sh" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "push ${FM_CONFIG_OVERRIDE:-}" >> "${PUSH_LOG:?}"
+if [ -n "${PUSH_BOUNDARY_BIN:-}" ]; then
+  exec "$PUSH_BOUNDARY_BIN/fm-config-push.sh"
+fi
+if [ -n "${PUSH_DEST:-}" ]; then
+  . "${PUSH_INHERIT_LIB:?}"
+  propagate_inheritable_config "$FM_CONFIG_OVERRIDE" "$PUSH_DEST/config" "$FM_HOME"
+  exit $?
+fi
 exit "${FAKE_PUSH_EXIT:-0}"
 SH
 chmod +x "$PUSH_BIN/fm-config-push.sh"
@@ -267,5 +275,88 @@ fm_config_inherit_item_machine_local dispatch-prefer &&
 fm_config_inherit_items | grep -qxF 'config/dispatch-prefer' ||
   fail "config/dispatch-prefer must be in the cross-machine inherited set"
 pass "the preference is declared inheritable and crosses to a remote home"
+
+PUSH_DEST="$TMP_ROOT/destination"
+mkdir -p "$PUSH_DEST/config"
+git -C "$PUSH_DEST" init -q
+printf '/config/*\n!/config/dispatch-prefer\n' > "$PUSH_DEST/.gitignore"
+for action in set auto clear; do
+  printf 'implementation=grok\n' > "$PUSH_DEST/config/dispatch-prefer"
+  case "$action" in
+    set) args=(set implementation codex) ;;
+    auto) args=(set implementation auto) ;;
+    clear) args=(clear) ;;
+  esac
+  out=$(FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE="$ROOT" PUSH_LOG="$PUSH_LOG" \
+    PUSH_DEST="$PUSH_DEST" PUSH_INHERIT_LIB="$ROOT/bin/fm-config-inherit-lib.sh" \
+    "$TOOL" "${args[@]}" 2> "$TMP_ROOT/stderr")
+  code=$?
+  expect_code 1 "$code" "$action fails when the inheritance consumer skips the preference"
+  assert_contains "$(cat "$TMP_ROOT/stderr")" 'warning: the local preference is set, but at least one secondmate home did not take it; run bin/fm-config-push.sh once that host is reachable' "$action reports incomplete convergence"
+  assert_equals 'implementation=grok' "$(cat "$PUSH_DEST/config/dispatch-prefer")" "$action preserves the refused destination"
+  case "$action" in
+    set) assert_equals 'implementation=codex' "$(cat "$PREFER")" "a skipped copy keeps the new local preference" ;;
+    auto) assert_equals '' "$(fm_prefer_for_kind "$HOME_DIR/config" implementation)" "a skipped removal keeps local auto" ;;
+    clear) assert_absent "$PREFER" "a skipped removal keeps the local clear" ;;
+  esac
+done
+printf '/config/\n' > "$PUSH_DEST/.gitignore"
+for attempt in first unchanged; do
+  out=$(FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE="$ROOT" PUSH_LOG="$PUSH_LOG" \
+    PUSH_DEST="$PUSH_DEST" PUSH_INHERIT_LIB="$ROOT/bin/fm-config-inherit-lib.sh" \
+    "$TOOL" set implementation codex 2> "$TMP_ROOT/stderr")
+  code=$?
+  expect_code 0 "$code" "$attempt convergence succeeds when the destination accepts the preference"
+  assert_equals 'implementation=codex' "$(cat "$PUSH_DEST/config/dispatch-prefer")" "$attempt convergence leaves the destination correct"
+  assert_equals '' "$(cat "$TMP_ROOT/stderr")" "$attempt convergence emits no false warning"
+done
+pass "skipped preference copies and removals fail while unchanged preferences converge"
+
+PUSH_BOUNDARY_BIN="$TMP_ROOT/boundary-bin"
+mkdir -p "$PUSH_BOUNDARY_BIN"
+cp "$ROOT/bin/fm-config-push.sh" "$PUSH_BOUNDARY_BIN/"
+cat > "$PUSH_BOUNDARY_BIN/fm-ff-lib.sh" <<'SH'
+live_secondmate_meta_records() { cat "${PUSH_RECORDS:?}"; }
+fm_meta_get() { printf '%s' "${PUSH_REMOTE_HOST:-}"; }
+validate_secondmate_home() { VALIDATION_ERROR='not a seeded secondmate home'; return 1; }
+SH
+for dependency in fm-backend.sh fm-wake-lib.sh fm-config-inherit-lib.sh fm-secondmate-nudge-lib.sh; do
+  : > "$PUSH_BOUNDARY_BIN/$dependency"
+done
+printf '#!/usr/bin/env bash\nexit 0\n' > "$PUSH_BOUNDARY_BIN/fm-guard.sh"
+chmod +x "$PUSH_BOUNDARY_BIN/fm-guard.sh"
+PUSH_RECORDS="$TMP_ROOT/records"
+for home_state in unresolved unsafe; do
+  case "$home_state" in
+    unresolved) printf 'legacy||fixture|fixture.meta\n' > "$PUSH_RECORDS" ;;
+    unsafe) printf 'unsafe|%s|fixture|fixture.meta\n' "$PUSH_DEST" > "$PUSH_RECORDS" ;;
+  esac
+  for action in set auto clear; do
+    case "$action" in
+      set) args=(set implementation grok) ;;
+      auto) args=(set implementation auto) ;;
+      clear) args=(clear) ;;
+    esac
+    out=$(FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE="$ROOT" PUSH_LOG="$PUSH_LOG" \
+      PUSH_BOUNDARY_BIN="$PUSH_BOUNDARY_BIN" PUSH_RECORDS="$PUSH_RECORDS" \
+      "$TOOL" "${args[@]}" 2> "$TMP_ROOT/stderr")
+    code=$?
+    expect_code 1 "$code" "$action fails for a $home_state home at the real push boundary"
+    assert_contains "$out" 'skipped -' "the push boundary retains its per-home skip report"
+    assert_contains "$(cat "$TMP_ROOT/stderr")" 'warning: the local preference is set, but at least one secondmate home did not take it; run bin/fm-config-push.sh once that host is reachable' "$action reports the incomplete $home_state home"
+    case "$action" in
+      set) assert_equals 'implementation=grok' "$(cat "$PREFER")" "an incomplete home never undoes the local write" ;;
+      auto) assert_equals '' "$(fm_prefer_for_kind "$HOME_DIR/config" implementation)" "an incomplete home never undoes local auto" ;;
+      clear) assert_absent "$PREFER" "an incomplete home never undoes local clear" ;;
+    esac
+  done
+done
+printf 'remote||fixture|fixture.meta\n' > "$PUSH_RECORDS"
+out=$(FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE="$ROOT" PUSH_REMOTE_HOST=telos64 \
+  PUSH_RECORDS="$PUSH_RECORDS" "$PUSH_BOUNDARY_BIN/fm-config-push.sh" --local-only 2> "$TMP_ROOT/stderr")
+code=$?
+expect_code 0 "$code" "a local-only push excludes remote records before requiring a home"
+assert_not_contains "$out" 'skipped - no home=' "an excluded remote is not an incomplete local target"
+pass "unresolved and unsafe homes fail through the push boundary for set, auto, and clear"
 
 printf '# all fm-prefer tests passed\n'

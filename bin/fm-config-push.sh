@@ -15,7 +15,6 @@
 # obligation across a partial, unknown, or killed completion. Unchanged homes send no
 # reread unless a previous reread is still owed. For local routes only,
 # data/captain-shared.md-only updates send no new reread pointer.
-# Warnings-only skips exit 0; real propagation or reread-send errors exit non-zero.
 # --local-only skips every record carrying remote_host, so the push never opens
 # SSH or waits on another machine; bin/fm-seat.sh uses it after a seat switch,
 # because seat settings never cross to a remote route.
@@ -38,7 +37,8 @@ This is local-material-only:
     (no message when unchanged unless a previous reread is still owed)
   - reports each live home and each inheritable item as pushed, unchanged,
     skipped, or error
-  - exits non-zero for real propagation errors or reread-send failures
+  - exits non-zero for unresolved homes, incomplete preference convergence,
+    propagation errors, or reread-send failures
 
 Live homes come from state/*.meta records with kind=secondmate.
 data/secondmates.md is only a fallback for missing home= fields in older or
@@ -128,12 +128,13 @@ seen_homes=""
 errors=0
 while IFS='|' read -r id home _window meta; do
   [ -n "$id" ] || continue
-  if [ -z "$home" ]; then
-    printf 'secondmate %s: skipped - no home= in %s and no registry home\n' "$id" "$meta"
-    continue
-  fi
   remote_host=$(fm_meta_get "$meta" remote_host)
   if [ -n "$remote_host" ] && [ "$LOCAL_ONLY" -eq 1 ]; then
+    continue
+  fi
+  if [ -z "$home" ]; then
+    printf 'secondmate %s: skipped - no home= in %s and no registry home\n' "$id" "$meta"
+    errors=1
     continue
   fi
   if [ -n "$remote_host" ]; then
@@ -196,6 +197,7 @@ while IFS='|' read -r id home _window meta; do
   fi
   if ! validate_secondmate_home "$id" "$home"; then
     printf 'secondmate %s (%s): skipped - unsafe home: %s\n' "$id" "$home" "$VALIDATION_ERROR"
+    errors=1
     continue
   fi
   home_real="$VALIDATED_HOME"
