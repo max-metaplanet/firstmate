@@ -2,14 +2,14 @@
 # fm-prefer.sh - say which worker runtime is preferred for a kind of work.
 #
 # Usage:
-#   fm-prefer.sh set <kind> <harness|auto> [--no-push]
+#   fm-prefer.sh set <kind> <harness|auto>
 #   fm-prefer.sh show
-#   fm-prefer.sh clear [--no-push]
+#   fm-prefer.sh clear
 #
 # `set implementation codex` is the whole of "prefer codex for implementation".
 # It writes config/dispatch-prefer in the effective home, then converges every
 # live secondmate home through bin/fm-config-push.sh, so one call leaves this
-# machine and each remote home correct. --no-push writes only this home.
+# machine and each remote home correct.
 #
 # What the preference does: it REORDERS the candidates of an already-matched
 # crew-dispatch rule so the preferred runtime comes first. It adds no candidate
@@ -105,12 +105,12 @@ push_to_secondmates() {
     FM_CONFIG_OVERRIDE="$CONFIG" "$SCRIPT_DIR/fm-config-push.sh"; then
     return 0
   fi
-  printf 'warning: the preference is set here, but not every secondmate home was updated (see above); those homes keep their previous preference until bin/fm-config-push.sh succeeds\n' >&2
+  printf 'warning: the local preference is set, but at least one secondmate home did not take it; run bin/fm-config-push.sh once that host is reachable\n' >&2
   return 1
 }
 
 cmd_set() {
-  local kind=$1 harness=$2 push=$3 existing='' line raw key current rc=0
+  local kind=$1 harness=$2 existing='' line raw key current
   fm_prefer_token_valid "$kind" || die "invalid kind: $kind (expected $FM_PREFER_TOKEN_RE)"
   if [ "$harness" != auto ]; then
     fm_prefer_token_valid "$harness" || die "invalid harness: $harness (expected $FM_PREFER_TOKEN_RE, or auto)"
@@ -146,9 +146,7 @@ cmd_set() {
     printf 'prefer %s for %s\n' "$harness" "$kind"
     report_kind "$kind" "$harness"
   fi
-  [ "$push" = 1 ] || return 0
-  push_to_secondmates || rc=1
-  return "$rc"
+  push_to_secondmates
 }
 
 cmd_show() {
@@ -175,21 +173,16 @@ cmd_show() {
 }
 
 cmd_clear() {
-  local push=$1 rc=0
   if [ -e "$PREFER_FILE" ] || [ -L "$PREFER_FILE" ]; then
     rm -f "$PREFER_FILE" || die "cannot remove $PREFER_FILE"
   fi
   printf 'no preference declared; every kind resolves exactly as it does with no preference\n'
-  [ "$push" = 1 ] || return 0
-  push_to_secondmates || rc=1
-  return "$rc"
+  push_to_secondmates
 }
 
-PUSH=1
 ARGS=()
 while [ $# -gt 0 ]; do
   case "$1" in
-    --no-push) PUSH=0; shift ;;
     -h|--help) usage; exit 0 ;;
     -*) die "unknown flag $1" ;;
     *) ARGS+=("$1"); shift ;;
@@ -200,7 +193,7 @@ done
 case "${ARGS[0]}" in
   set)
     [ "${#ARGS[@]}" -eq 3 ] || die "set needs <kind> and <harness|auto>"
-    cmd_set "${ARGS[1]}" "${ARGS[2]}" "$PUSH"
+    cmd_set "${ARGS[1]}" "${ARGS[2]}"
     ;;
   show)
     [ "${#ARGS[@]}" -eq 1 ] || die "show takes no arguments"
@@ -208,7 +201,7 @@ case "${ARGS[0]}" in
     ;;
   clear)
     [ "${#ARGS[@]}" -eq 1 ] || die "clear takes no arguments"
-    cmd_clear "$PUSH"
+    cmd_clear
     ;;
   *) die "unknown command ${ARGS[0]} (expected set, show, or clear)" ;;
 esac

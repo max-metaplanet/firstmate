@@ -3,20 +3,31 @@
 #
 # Drives the public argv interface against an isolated FM_HOME. The convergence
 # that bin/fm-prefer.sh runs for secondmate homes is bin/fm-config-push.sh, so
-# these cases drive it through a stand-in on PATH rather than reimplementing it,
+# these cases run a disposable script copy beside a stand-in push command,
 # and the inheritance declaration itself is asserted against its one owner.
 set -u
 
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-TOOL="$ROOT/bin/fm-prefer.sh"
 TMP_ROOT=$(fm_test_tmproot fm-prefer)
 HOME_DIR="$TMP_ROOT/home"
 PREFER="$HOME_DIR/config/dispatch-prefer"
 RULES="$HOME_DIR/config/crew-dispatch.json"
 PUSH_LOG="$TMP_ROOT/push.log"
 mkdir -p "$HOME_DIR/config" "$HOME_DIR/state"
+
+PUSH_BIN="$TMP_ROOT/push-bin"
+mkdir -p "$PUSH_BIN"
+cp "$ROOT/bin/fm-prefer.sh" "$ROOT/bin/fm-prefer-lib.sh" "$ROOT/bin/fm-control-lib.sh" "$PUSH_BIN/"
+cat > "$PUSH_BIN/fm-config-push.sh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "push ${FM_CONFIG_OVERRIDE:-}" >> "${PUSH_LOG:?}"
+exit "${FAKE_PUSH_EXIT:-0}"
+SH
+chmod +x "$PUSH_BIN/fm-config-push.sh"
+TOOL="$PUSH_BIN/fm-prefer.sh"
+: > "$PUSH_LOG"
 
 # shellcheck source=bin/fm-prefer-lib.sh
 . "$ROOT/bin/fm-prefer-lib.sh"
@@ -43,7 +54,7 @@ code='' out='' err=''
 run() {  # <exit-var> <out-var> <err-var> [args...]
   local __exit=$1 __out=$2 __err=$3 _out _code
   shift 3
-  _out=$(FM_HOME="$HOME_DIR" "$TOOL" "$@" 2> "$TMP_ROOT/stderr")
+  _out=$(FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE="$ROOT" PUSH_LOG="$PUSH_LOG" "$TOOL" "$@" 2> "$TMP_ROOT/stderr")
   _code=$?
   printf -v "$__exit" '%s' "$_code"
   printf -v "$__out" '%s' "$_out"
@@ -59,17 +70,18 @@ assert_contains "$out" 'rule_3: unclassified' "show names an unclassified rule"
 pass "show reports an empty preference and every rule's declared kind"
 
 # --- set writes the preference and discloses whether it can ever apply ------
-run code out err set implementation codex --no-push
+run code out err set implementation codex
 expect_code 0 "$code" "set exits 0"
 assert_equals 'implementation=codex' "$(cat "$PREFER")" "set writes one kind=harness line"
 assert_contains "$out" 'prefer codex for implementation' "set states the preference in the operator's own words"
 assert_contains "$out" 'rule_1 declares kind=implementation and lists codex' "set names the rule the preference reaches"
+assert_equals "push $HOME_DIR/config" "$(cat "$PUSH_LOG")" "the ordinary set command converges through the disposable push stub"
 
-run code out err set investigation codex --no-push
+run code out err set investigation codex
 expect_code 0 "$code" "set exits 0 for a preference that cannot apply"
 assert_contains "$out" 'no rule declaring kind=investigation lists codex' "a preference no matching rule lists says so"
 
-run code out err set deployment codex --no-push
+run code out err set deployment codex
 assert_contains "$out" 'declares kind=deployment' "a preference for an undeclared kind says so"
 assert_contains "$out" 'no-op until one does' "an undeclared kind is reported as a no-op"
 pass "set discloses a preference that can only ever be a no-op"
@@ -78,27 +90,27 @@ pass "set discloses a preference that can only ever be a no-op"
 run code out err show
 assert_contains "$out" 'prefer codex for implementation' "show lists the first preference"
 assert_contains "$out" 'prefer codex for investigation' "show lists the second preference"
-run code out err set investigation auto --no-push
+run code out err set investigation auto
 expect_code 0 "$code" "set auto exits 0"
 assert_contains "$out" 'no preference for investigation' "auto states that the kind is unpreferred"
 assert_equals "$(printf 'implementation=codex\ndeployment=codex')" "$(cat "$PREFER")" "auto removes only its own kind"
 pass "kinds are independent and auto clears exactly one"
 
 # --- replacing a preference is one call -------------------------------------
-run code out err set implementation grok --no-push
+run code out err set implementation grok
 assert_equals "$(printf 'deployment=codex\nimplementation=grok')" "$(cat "$PREFER")" "a second set replaces that kind's line"
 pass "changing the preferred runtime is one call"
 
 # --- refusals ----------------------------------------------------------------
-run code out err set implementation nosuchharness --no-push
+run code out err set implementation nosuchharness
 expect_code 2 "$code" "an unverified harness is refused"
 assert_contains "$err" 'is not a verified harness' "the refusal explains the harness requirement"
-run code out err set 'Implementation Work' codex --no-push
+run code out err set 'Implementation Work' codex
 expect_code 2 "$code" "a malformed kind is refused"
 assert_contains "$err" 'invalid kind' "the refusal explains the kind requirement"
-run code out err set implementation --no-push
+run code out err set implementation
 expect_code 2 "$code" "a missing harness argument is refused"
-run code out err frobnicate --no-push
+run code out err frobnicate
 expect_code 2 "$code" "an unknown command is refused"
 assert_contains "$err" 'unknown command' "the refusal names the accepted commands"
 pass "set refuses an unverified harness, a malformed kind, and a bad invocation"
@@ -135,22 +147,26 @@ assert_equals '{}' "$(fm_prefer_json "$TMP_ROOT/absent-config")" "an absent file
 newline_kind=$'implementation\n'
 fm_prefer_token_valid "$newline_kind" &&
   fail "a token with a trailing newline must not validate"
-run code out err set "$newline_kind" codex --no-push
+run code out err set "$newline_kind" codex
 expect_code 2 "$code" "a kind with a trailing newline is refused"
-run code out err set implementation grok --no-push
+run code out err set implementation grok
 expect_code 0 "$code" "a spaced key can be replaced"
 assert_equals '{"quick-fix":"grok","implementation":"grok"}' \
   "$(fm_prefer_json "$HOME_DIR/config")" "replacement normalizes the key without duplicating it"
 assert_contains "$(cat "$PREFER")" '# comments and blank lines are ignored' "replacement preserves comments"
+printf 'implementation = codex\n' > "$PREFER"
+run code out err set implementation grok
+expect_code 0 "$code" "a single spaced key can be replaced"
+assert_equals 'implementation=grok' "$(cat "$PREFER")" "replacement leaves exactly one correct persisted line"
 printf '  implementation \t= codex\r\nquick-fix=grok\n' > "$PREFER"
-run code out err set implementation auto --no-push
+run code out err set implementation auto
 expect_code 0 "$code" "a spaced key can be removed"
 assert_equals '{"quick-fix":"grok"}' "$(fm_prefer_json "$HOME_DIR/config")" "auto removes the spaced key and preserves its sibling"
 printf 'implementation=codez\n' > "$PREFER"
 run code out err show
 expect_code 2 "$code" "show refuses an unknown harness in persisted configuration"
 assert_contains "$err" 'is not a verified harness' "the parser explains the harness refusal"
-run code out err set quick-fix codex --no-push
+run code out err set quick-fix codex
 expect_code 2 "$code" "set refuses an existing unknown harness"
 assert_equals 'implementation=codez' "$(cat "$PREFER")" "refused updates leave the persisted file intact"
 if out=$(fm_prefer_for_kind "$HOME_DIR/config" implementation); then
@@ -160,11 +176,11 @@ assert_contains "$out" 'is not a verified harness' "kind lookup uses the same va
 pass "the documented file format parses exactly as documented"
 
 # --- clear removes every preference -----------------------------------------
-run code out err clear --no-push
+run code out err clear
 expect_code 0 "$code" "clear exits 0"
 assert_absent "$PREFER" "clear removes the preference file"
 assert_contains "$out" 'no preference declared' "clear states the resulting posture"
-run code out err clear --no-push
+run code out err clear
 expect_code 0 "$code" "clear is idempotent"
 pass "clear removes every preference and repeats safely"
 
@@ -172,17 +188,6 @@ pass "clear removes every preference and repeats safely"
 # bin/fm-config-push.sh owns that convergence; this asserts only that set and
 # clear actually invoke it, since skipping it is what would leave a second home
 # on yesterday's preference.
-FAKEBIN=$(fm_fakebin "$TMP_ROOT")
-cat > "$FAKEBIN/fm-config-push.sh" <<'SH'
-#!/usr/bin/env bash
-printf '%s\n' "push ${FM_CONFIG_OVERRIDE:-}" >> "${PUSH_LOG:?}"
-exit "${FAKE_PUSH_EXIT:-0}"
-SH
-chmod +x "$FAKEBIN/fm-config-push.sh"
-PUSH_BIN="$TMP_ROOT/push-bin"
-mkdir -p "$PUSH_BIN"
-cp "$ROOT/bin/fm-prefer.sh" "$ROOT/bin/fm-prefer-lib.sh" "$ROOT/bin/fm-control-lib.sh" "$PUSH_BIN/"
-cp "$FAKEBIN/fm-config-push.sh" "$PUSH_BIN/"
 
 FAIL_BIN="$TMP_ROOT/fail-bin"
 mkdir -p "$FAIL_BIN"
@@ -197,7 +202,7 @@ for fail_command in mktemp cat chmod mv; do
   : > "$PUSH_LOG"
   out=$(PATH="$FAIL_BIN:$PATH" PREFER_FAIL_COMMAND="$fail_command" \
     FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE="$ROOT" PUSH_LOG="$PUSH_LOG" \
-    "$PUSH_BIN/fm-prefer.sh" set implementation grok 2> "$TMP_ROOT/stderr")
+    "$TOOL" set implementation grok 2> "$TMP_ROOT/stderr")
   code=$?
   expect_code 2 "$code" "$fail_command failure refuses the update"
   assert_equals '' "$out" "$fail_command failure reports no success or convergence"
@@ -209,7 +214,7 @@ pass "every write failure stops before success output and propagation"
 
 : > "$PUSH_LOG"
 out=$(FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE="$ROOT" PUSH_LOG="$PUSH_LOG" \
-  "$PUSH_BIN/fm-prefer.sh" set implementation codex 2>&1)
+  "$TOOL" set implementation codex 2>&1)
 code=$?
 expect_code 0 "$code" "set with convergence exits 0"
 assert_contains "$out" 'converging secondmate homes' "set announces the convergence"
@@ -217,16 +222,35 @@ assert_contains "$(cat "$PUSH_LOG")" "push $HOME_DIR/config" "set converges thro
 
 : > "$PUSH_LOG"
 FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE="$ROOT" PUSH_LOG="$PUSH_LOG" \
-  "$PUSH_BIN/fm-prefer.sh" clear >/dev/null 2>&1
+  "$TOOL" clear >/dev/null 2>&1
 assert_contains "$(cat "$PUSH_LOG")" "push $HOME_DIR/config" "clear converges through bin/fm-config-push.sh"
 
+for action in set auto clear; do
+  printf 'implementation=grok\n' > "$PREFER"
+  : > "$PUSH_LOG"
+  case "$action" in
+    set) args=(set implementation codex) ;;
+    auto) args=(set implementation auto) ;;
+    clear) args=(clear) ;;
+  esac
+  out=$(FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE="$ROOT" PUSH_LOG="$PUSH_LOG" FAKE_PUSH_EXIT=1 \
+    "$TOOL" "${args[@]}" 2>&1)
+  code=$?
+  expect_code 1 "$code" "$action reports failed convergence"
+  assert_contains "$out" 'warning: the local preference is set, but at least one secondmate home did not take it; run bin/fm-config-push.sh once that host is reachable' "$action names the local state, divergence, and exact retry command"
+  assert_equals "push $HOME_DIR/config" "$(cat "$PUSH_LOG")" "$action attempts convergence exactly once"
+  case "$action" in
+    set) assert_equals 'implementation=codex' "$(cat "$PREFER")" "failed convergence keeps the new local preference" ;;
+    auto) assert_equals '' "$(fm_prefer_for_kind "$HOME_DIR/config" implementation)" "failed convergence keeps the local auto selection" ;;
+    clear) assert_absent "$PREFER" "failed convergence keeps the local clear" ;;
+  esac
+done
 : > "$PUSH_LOG"
-out=$(FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE="$ROOT" PUSH_LOG="$PUSH_LOG" FAKE_PUSH_EXIT=1 \
-  "$PUSH_BIN/fm-prefer.sh" set implementation codex 2>&1)
-code=$?
-expect_code 1 "$code" "a failed convergence is reported, not swallowed"
-assert_contains "$out" 'not every secondmate home was updated' "a failed convergence names what is stale"
-assert_equals 'implementation=codex' "$(cat "$PREFER")" "a failed convergence never undoes this home's change"
+run code out err set implementation grok --no-push
+expect_code 2 "$code" "the removed local-only option is refused"
+assert_contains "$err" 'unknown flag --no-push' "the removed option has no bypass path"
+assert_absent "$PREFER" "a refused option changes no preference"
+assert_equals '' "$(cat "$PUSH_LOG")" "a refused option starts no convergence"
 pass "one call writes this home and converges the others"
 
 # --- the preference is declared inheritable, from its one owner -------------

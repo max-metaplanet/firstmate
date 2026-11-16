@@ -2092,8 +2092,8 @@ An honest unknown is the outcome there, never a guessed number: a Codex lane aut
 
 `config/dispatch-prefer` is declared inheritable in [`bin/fm-config-inherit-lib.sh`](../bin/fm-config-inherit-lib.sh), so every convergence point carries it: a secondmate spawn, the bootstrap secondmate sweep, the mid-session config push, and the remote inherited-material route.
 `bin/fm-prefer.sh set` and `clear` run that convergence themselves through `bin/fm-config-push.sh`, so one call leaves this machine and each live local and remote secondmate home correct.
-`--no-push` writes only this home.
-A failed convergence never undoes this home's change: it is reported, it names the homes still on their previous preference, and `bin/fm-config-push.sh` can be re-run on its own.
+A failed convergence never undoes this home's change: the command exits non-zero, reports that at least one home did not take the local preference, and names `bin/fm-config-push.sh` to run once that host is reachable.
+`bin/fm-config-push.sh` owns the per-home convergence report.
 A host that is not a registered secondmate route of this home receives nothing, because there is no supported route to it; register it under [Secondmate routes](#secondmate-routes-datasecondmatesmd) first.
 
 ## Typed dispatch resolution (.env TYPESAFE_API_KEY)
