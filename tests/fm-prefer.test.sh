@@ -201,6 +201,8 @@ FAIL_BIN="$TMP_ROOT/fail-bin"
 mkdir -p "$FAIL_BIN"
 for fail_command in mktemp cat chmod mv; do
   real_command=$(command -v "$fail_command")
+  # The placeholders belong to the generated script.
+  # shellcheck disable=SC2016
   printf '#!/usr/bin/env bash\n[ "${PREFER_FAIL_COMMAND:-}" != %q ] || exit 1\nexec %q "$@"\n' \
     "$fail_command" "$real_command" > "$FAIL_BIN/$fail_command"
   chmod +x "$FAIL_BIN/$fail_command"
