@@ -448,7 +448,11 @@ else
       *) refuse "'$sub_dir' resolves to '$sub_dir_real', outside the home, so '$TARGET_REAL' is not a safe secondmate home" ;;
     esac
   done
+  PROJ_CANON=$(canonical_checkout_of "$TARGET_REAL") || true
+  [ -n "$PROJ_CANON" ] \
+    || refuse "'$TARGET_REAL' has no resolvable canonical checkout"
   LAUNCH_KEYS=("$TARGET_REAL")
+  [ "$PROJ_CANON" = "$TARGET_REAL" ] || LAUNCH_KEYS+=("$PROJ_CANON")
 
   # The home's project clones, which a claude launch on this host starts in
   # just as readily as the home itself. A clone qualifies on the same

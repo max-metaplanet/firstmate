@@ -683,8 +683,8 @@ test_secondmate_standalone_clone_home_is_trusted() {
   seed_secondmate_home "$home" nomistakes-n1 clone
   out=$(spawn_secondmate_claude "$case_dir" "$home" nomistakes-n1)
   expect_code 0 $? "a claude secondmate spawn into a standalone-clone home must succeed: $out"
-  assert_trusted "$case_dir/claude-config/.claude.json" "$home" \
-    "the claude secondmate spawn did not pre-register trust for its standalone-clone home"
+  assert_all_flags "$case_dir/claude-config/.claude.json" "$home" \
+    "the claude secondmate spawn did not register trust and import approval for its standalone-clone home"
   assert_present "$case_dir/launch.log" "the claude secondmate spawn sent no launch command"
   assert_grep 'claude --dangerously-skip-permissions' "$case_dir/launch.log" \
     "the launch command was not the claude secondmate launch"
@@ -714,8 +714,10 @@ test_secondmate_leased_worktree_home_is_trusted() {
   seed_secondmate_home "$home" leased-n1 worktree
   out=$(spawn_secondmate_claude "$case_dir" "$home" leased-n1)
   expect_code 0 $? "a claude secondmate spawn into a leased worktree home must succeed: $out"
-  assert_trusted "$case_dir/claude-config/.claude.json" "$home" \
-    "the claude secondmate spawn did not pre-register trust for its leased worktree home"
+  assert_all_flags "$case_dir/claude-config/.claude.json" "$home" \
+    "the claude secondmate spawn did not register trust and import approval for its leased worktree home"
+  assert_all_flags "$case_dir/claude-config/.claude.json" "$home.src" \
+    "the leased home's primary checkout did not receive the import approval Claude reads"
   pass "fm-spawn.sh: a claude secondmate spawn pre-trusts a leased worktree home"
 }
 
