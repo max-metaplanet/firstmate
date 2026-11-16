@@ -83,21 +83,15 @@ assert_all_flags() {
   ' "$store" "$key" || fail "$msg"
 }
 
-# assert_trust_only_no_import_consent <store> <path> <msg>: the entry at
-# <path> carries hasTrustDialogAccepted===true but NEITHER external-imports
-# flag is true - the shape a registration must leave behind when the project
-# entry had no prior explicit "Yes, allow" for external CLAUDE.md imports, so
-# a spawn never manufactures that consent from an absent flag.
-assert_trust_only_no_import_consent() {
+# assert_no_entry <store> <path> <msg>: the store holds no project entry at
+# <path> at all - the shape a registration must leave behind for an entry it
+# deliberately skipped, so a skip is provably a skip rather than a partial
+# write that reports one thing and records another.
+assert_no_entry() {
   local store=$1 key=$2 msg=$3
   node -e '
     const j=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8"));
-    const e=(j.projects||{})[process.argv[2]]||{};
-    const trustOk = e.hasTrustDialogAccepted === true;
-    const noImportConsent =
-      e.hasClaudeMdExternalIncludesApproved !== true &&
-      e.hasClaudeMdExternalIncludesWarningShown !== true;
-    process.exit(trustOk && noImportConsent ? 0 : 1);
+    process.exit(Object.prototype.hasOwnProperty.call(j.projects||{},process.argv[2])?1:0);
   ' "$store" "$key" || fail "$msg"
 }
 
@@ -173,28 +167,28 @@ test_fresh_worktree_is_trusted() {
   pass "fm-claude-trust.sh: a fresh task worktree is trusted"
 }
 
-# The trust dialog is read only from the PROJECT-root entry, never the
-# worktree entry (Claude Code's own git-root canonicalization collapses every
-# linked worktree to its primary checkout for that check, with no
+# The external-imports dialog is read only from the PROJECT-root entry, never
+# the worktree entry (Claude Code's own git-root canonicalization collapses
+# every linked worktree to its primary checkout for that check, with no
 # ancestor-walk fallback the way the trust check has), so this proves both
-# entries carry the trust flag after one registration. External-imports
-# consent is a SEPARATE grant this script never manufactures: on a genuinely
-# fresh project (no prior interactive answer at all) neither entry may carry
-# hasClaudeMdExternalIncludesApproved or hasClaudeMdExternalIncludesWarningShown
-# - see test_registration_carries_forward_existing_import_consent below for
-# the case where the project already said yes.
-test_fresh_worktree_also_trusts_the_project_root_without_import_consent() {
+# entries carry every flag after one registration. On a genuinely fresh
+# project - no prior interactive answer at all - the captain's standing
+# consent is what the import flags rest on, so the dialog is suppressed
+# without a human ever being asked. The one state that still refuses is an
+# explicit decline; see
+# test_project_root_entry_declined_external_imports_is_not_overridden.
+test_fresh_worktree_also_registers_the_project_root_import_consent() {
   local rec out
   rec=$(make_case fresh-project)
   read_case "$rec"
   out=$(run_trust "$CONFIG" "$WT" "$PROJ")
   expect_code 0 $? "a fresh linked worktree must be trusted: $out"
   assert_contains "$out" "$PROJ" "registration did not report the project root it also trusted"
-  assert_trust_only_no_import_consent "$CONFIG/.claude.json" "$WT" \
-    "the worktree entry either lost trust or gained unearned import consent"
-  assert_trust_only_no_import_consent "$CONFIG/.claude.json" "$PROJ" \
-    "the project-root entry either lost trust or gained unearned import consent"
-  pass "fm-claude-trust.sh: a fresh registration trusts the project root without manufacturing import consent"
+  assert_all_flags "$CONFIG/.claude.json" "$WT" \
+    "the worktree entry did not carry trust and the standing import consent"
+  assert_all_flags "$CONFIG/.claude.json" "$PROJ" \
+    "the project-root entry did not carry trust and the standing import consent"
+  pass "fm-claude-trust.sh: a fresh registration carries the standing import consent onto the project root"
 }
 
 # The Greptile-flagged regression this pins: a project entry that already
@@ -232,8 +226,8 @@ test_project_root_entry_preserves_other_keys() {
 {"hasCompletedOnboarding":true,"projects":{"$PROJ":{"hasTrustDialogAccepted":false,"allowedTools":["Read"]}}}
 JSON
   run_trust "$CONFIG" "$WT" "$PROJ" >/dev/null || fail "registration failed against an existing project entry"
-  assert_trust_only_no_import_consent "$store" "$PROJ" \
-    "the project-root entry did not gain trust, or gained unearned import consent it had never been asked for"
+  assert_all_flags "$store" "$PROJ" \
+    "the project-root entry did not gain trust and the standing import consent"
   assert_store_value "$store" '["Read"]' "the project entry's unrelated settings were lost" projects "$PROJ" allowedTools
   pass "fm-claude-trust.sh: preserves unrelated keys on the project-root entry"
 }
@@ -269,8 +263,9 @@ JSON
 # Claude Code's own default project entry carries BOTH external-imports flags as
 # false before the dialog was ever shown; answering the dialog either way sets
 # hasClaudeMdExternalIncludesWarningShown to true. So false/false is "never
-# asked", not "No, disable": it must be treated like an absent flag - trust
-# registered, no import consent manufactured - rather than refused.
+# asked", not "No, disable": it must be treated like an absent flag, which
+# under the standing consent means the import flags are registered rather than
+# the whole registration refused.
 test_project_root_entry_default_import_flags_are_not_a_decline() {
   local rec store out
   rec=$(make_case project-default-flags)
@@ -281,10 +276,10 @@ test_project_root_entry_default_import_flags_are_not_a_decline() {
 JSON
   out=$(run_trust "$CONFIG" "$WT" "$PROJ")
   expect_code 0 $? "a never-asked default entry must not be refused as a decline: $out"
-  assert_trust_only_no_import_consent "$store" "$WT" \
-    "the worktree entry either lost trust or gained unearned import consent"
-  assert_trust_only_no_import_consent "$store" "$PROJ" \
-    "the project-root entry either lost trust or gained import consent it was never asked for"
+  assert_all_flags "$store" "$WT" \
+    "the worktree entry did not carry trust and the standing import consent"
+  assert_all_flags "$store" "$PROJ" \
+    "a never-asked default pair blocked the standing import consent on the project-root entry"
   pass "fm-claude-trust.sh: a never-asked default external-imports pair is not treated as a decline"
 }
 
@@ -476,8 +471,8 @@ test_project_argument_that_is_itself_a_worktree_resolves_to_the_primary_checkout
   out=$(run_trust "$CONFIG" "$WT" "$proj_wt")
   expect_code 0 $? "a project argument that is itself a linked worktree must resolve to its primary checkout: $out"
   assert_contains "$out" "$PROJ" "the outcome did not name the resolved primary checkout"
-  assert_trust_only_no_import_consent "$CONFIG/.claude.json" "$PROJ" \
-    "the resolved primary checkout either lost trust or gained unearned import consent"
+  assert_all_flags "$CONFIG/.claude.json" "$PROJ" \
+    "the resolved primary checkout did not carry trust and the standing import consent"
   assert_not_trusted "$CONFIG/.claude.json" "$proj_wt" \
     "the linked worktree argument itself was recorded as the project root"
   pass "fm-claude-trust.sh: a project argument that is itself a linked worktree resolves to the primary checkout"
@@ -839,7 +834,7 @@ test_secondmate_spawn_fails_closed_when_home_trust_cannot_be_recorded() {
 }
 
 test_fresh_worktree_is_trusted
-test_fresh_worktree_also_trusts_the_project_root_without_import_consent
+test_fresh_worktree_also_registers_the_project_root_import_consent
 test_registration_carries_forward_existing_import_consent
 test_project_root_entry_preserves_other_keys
 test_project_root_entry_declined_external_imports_is_not_overridden
@@ -915,3 +910,223 @@ test_secondmate_spawn_refuses_a_missing_seat_directory() {
 }
 
 test_secondmate_spawn_refuses_a_missing_seat_directory
+
+
+# --- project mode -----------------------------------------------------------
+#
+# A checkout a claude launch starts in directly - a project clone registered
+# when it is added, or a firstmate home a relaunch opens - has no second
+# argument to relate it to, so the structural evidence is the one fact that
+# makes a path a legitimate project-config key: it is the top level of a git
+# checkout. These prove that test accepts exactly that and nothing wider.
+
+# run_project_trust <config> <checkout> [user-home]: invoke project mode
+# against an isolated store.
+run_project_trust() {
+  local config=$1 checkout=$2 user_home=${3:-$1}
+  CLAUDE_CONFIG_DIR="$config" HOME="$user_home" "$TRUST" --project "$checkout" 2>&1
+}
+
+test_project_mode_registers_a_plain_project_checkout() {
+  local case_dir config checkout out
+  case_dir="$TMP_ROOT/project-plain"
+  config="$case_dir/claude-config"
+  checkout="$case_dir/project"
+  mkdir -p "$config"
+  fm_git_init_commit "$checkout"
+  out=$(run_project_trust "$config" "$checkout")
+  expect_code 0 $? "a project checkout must be registered: $out"
+  assert_contains "$out" "trusted:" "registration did not report what it registered"
+  assert_all_flags "$config/.claude.json" "$checkout" \
+    "the project checkout did not carry trust and the standing import consent"
+  pass "fm-claude-trust.sh: --project registers a project checkout"
+}
+
+# A firstmate home or project clone is legitimately leased as a linked
+# worktree, and Claude Code keys its external-imports check to the primary
+# checkout that worktree collapses to, so project mode must register both
+# rather than leaving the flags at a key the running app never reads.
+test_project_mode_resolves_a_linked_worktree_to_its_primary_checkout() {
+  local case_dir config proj wt out
+  case_dir="$TMP_ROOT/project-leased"
+  config="$case_dir/claude-config"
+  proj="$case_dir/project"
+  wt="$case_dir/wt"
+  mkdir -p "$config"
+  fm_git_worktree "$proj" "$wt" wt-project-leased
+  out=$(run_project_trust "$config" "$wt")
+  expect_code 0 $? "a leased checkout must resolve to its primary: $out"
+  assert_contains "$out" "$proj" "the outcome did not name the resolved primary checkout"
+  assert_all_flags "$config/.claude.json" "$wt" \
+    "the launch directory did not carry trust and the standing import consent"
+  assert_all_flags "$config/.claude.json" "$proj" \
+    "the resolved primary checkout did not carry trust and the standing import consent"
+  pass "fm-claude-trust.sh: --project resolves a linked worktree to its primary checkout"
+}
+
+test_project_mode_refuses_anything_that_is_not_a_checkout_root() {
+  local case_dir config target out
+  case_dir="$TMP_ROOT/project-refusals"
+  config="$case_dir/claude-config"
+  mkdir -p "$config"
+
+  # A plain directory: no git root, so Claude Code would key its project
+  # config somewhere this registration never named.
+  target="$case_dir/plain"
+  mkdir -p "$target"
+  out=$(run_project_trust "$config" "$target")
+  expect_code 1 $? "a plain directory must be refused: $out"
+  assert_contains "$out" "top level of a git checkout" "the refusal did not name the missing checkout root"
+  assert_not_trusted "$config/.claude.json" "$target" "a plain directory was registered"
+
+  # A subdirectory of a checkout: git answers the repository root, which is
+  # not the argument, so registering it would record a key for a directory
+  # nobody named.
+  target="$case_dir/project/sub"
+  fm_git_init_commit "$case_dir/project"
+  mkdir -p "$target"
+  out=$(run_project_trust "$config" "$target")
+  expect_code 1 $? "a subdirectory of a checkout must be refused: $out"
+  assert_contains "$out" "top level of a git checkout" "the refusal did not name the missing checkout root"
+  assert_not_trusted "$config/.claude.json" "$target" "a checkout subdirectory was registered"
+
+  # A path that does not exist.
+  out=$(run_project_trust "$config" "$case_dir/absent")
+  expect_code 1 $? "a missing directory must be refused: $out"
+  assert_contains "$out" "not an accessible directory" "the refusal did not name the missing directory"
+
+  # The user's own home directory, made a checkout to prove the git test alone
+  # cannot carry it.
+  target="$case_dir/user-home"
+  fm_git_init_commit "$target"
+  out=$(run_project_trust "$config" "$target" "$target")
+  expect_code 1 $? "the user's home directory must be refused: $out"
+  assert_contains "$out" "home directory" "the refusal did not name the home directory"
+  assert_not_trusted "$config/.claude.json" "$target" "the user's home directory was registered"
+  # The same checkout is accepted once it is not HOME, so the guard above is
+  # what refused rather than an unrelated failure.
+  out=$(run_project_trust "$config" "$target" "$case_dir/elsewhere-home")
+  expect_code 0 $? "the same checkout must be accepted once it is not HOME: $out"
+
+  pass "fm-claude-trust.sh: --project refuses anything that is not a checkout root"
+}
+
+# The standing consent covers a dialog nobody answered, never an answer a
+# human already gave, and project mode registers the directory a launch starts
+# in - so a prior "No, disable" refuses here exactly as it does in worktree
+# mode rather than being flipped.
+test_project_mode_refuses_a_declined_project() {
+  local case_dir config checkout store before after out
+  case_dir="$TMP_ROOT/project-declined"
+  config="$case_dir/claude-config"
+  checkout="$case_dir/project"
+  mkdir -p "$config"
+  fm_git_init_commit "$checkout"
+  store="$config/.claude.json"
+  cat > "$store" <<JSON
+{"hasCompletedOnboarding":true,"projects":{"$checkout":{"hasTrustDialogAccepted":true,"hasClaudeMdExternalIncludesApproved":false,"hasClaudeMdExternalIncludesWarningShown":true}}}
+JSON
+  before=$(cat "$store")
+  out=$(run_project_trust "$config" "$checkout")
+  expect_code 1 $? "a declined project must be refused: $out"
+  assert_contains "$out" "declined external CLAUDE.md imports" \
+    "the refusal did not name the declined-consent reason"
+  assert_contains "$out" "approve the imports dialog interactively" \
+    "the refusal did not name the recovery"
+  after=$(cat "$store")
+  [ "$before" = "$after" ] || fail "the store was modified despite the refusal"
+  pass "fm-claude-trust.sh: --project refuses to override a declined project"
+}
+
+# --- a secondmate home's project clones -------------------------------------
+
+# seed_home_clone <home> <name>: a project clone of the shape a secondmate home
+# carries under projects/, a standalone checkout of its own.
+seed_home_clone() {
+  fm_git_init_commit "$1/projects/$2"
+}
+
+# The gap that left a remote secondmate host wedging: the home was registered
+# and its project clones were not, so every claude launch in one of those
+# clones still met the dialog. Registering the home now registers them too.
+test_secondmate_home_registers_its_project_clones() {
+  local case_dir config home out store
+  case_dir="$TMP_ROOT/sm-clones"
+  config="$case_dir/claude-config"
+  home="$case_dir/fm-homes/clones-n1"
+  store="$config/.claude.json"
+  mkdir -p "$config"
+  seed_secondmate_home "$home" clones-n1 clone
+  seed_home_clone "$home" alpha
+  seed_home_clone "$home" beta
+  out=$(run_home_trust "$config" "$home" clones-n1)
+  expect_code 0 $? "a seeded home with clones must be registered: $out"
+  assert_contains "$out" "project clone" "the outcome did not report the clones it registered"
+  assert_all_flags "$store" "$home" "the home itself did not carry every flag"
+  assert_all_flags "$store" "$home/projects/alpha" "a project clone was not registered"
+  assert_all_flags "$store" "$home/projects/beta" "a second project clone was not registered"
+  pass "fm-claude-trust.sh: a secondmate home registers its project clones"
+}
+
+# A clone the human declined is not the directory this spawn launches into, so
+# it is skipped rather than refusing the home and stranding the spawn - and the
+# declined entry itself must come back untouched.
+test_secondmate_home_skips_a_declined_project_clone() {
+  local case_dir config home store out
+  case_dir="$TMP_ROOT/sm-clone-declined"
+  config="$case_dir/claude-config"
+  home="$case_dir/fm-homes/declined-n1"
+  store="$config/.claude.json"
+  mkdir -p "$config"
+  seed_secondmate_home "$home" declined-n1 clone
+  seed_home_clone "$home" alpha
+  seed_home_clone "$home" beta
+  cat > "$store" <<JSON
+{"hasCompletedOnboarding":true,"projects":{"$home/projects/beta":{"hasClaudeMdExternalIncludesApproved":false,"hasClaudeMdExternalIncludesWarningShown":true}}}
+JSON
+  out=$(run_home_trust "$config" "$home" declined-n1)
+  expect_code 0 $? "a declined clone must not refuse the whole home: $out"
+  assert_all_flags "$store" "$home" "the home lost its registration over a declined clone"
+  assert_all_flags "$store" "$home/projects/alpha" "an undeclined clone lost its registration"
+  assert_store_value "$store" false "the declined clone's answer was flipped" \
+    projects "$home/projects/beta" hasClaudeMdExternalIncludesApproved
+  assert_not_trusted "$store" "$home/projects/beta" "the declined clone was registered anyway"
+  pass "fm-claude-trust.sh: a declined project clone is skipped without refusing the home"
+}
+
+# Everything else under projects/ is skipped silently rather than registered or
+# refused: it is not a launch target, and refusing the home over a stray
+# directory would strand the spawn that needs the home registered.
+test_secondmate_home_skips_non_checkout_entries_under_projects() {
+  local case_dir config home store out
+  case_dir="$TMP_ROOT/sm-clone-nonrepo"
+  config="$case_dir/claude-config"
+  home="$case_dir/fm-homes/nonrepo-n1"
+  store="$config/.claude.json"
+  mkdir -p "$config"
+  seed_secondmate_home "$home" nonrepo-n1 clone
+  seed_home_clone "$home" alpha
+  mkdir -p "$home/projects/notes"
+  printf 'scratch\n' > "$home/projects/notes/README"
+  printf 'loose\n' > "$home/projects/loose.txt"
+  mkdir -p "$case_dir/outside"
+  fm_git_init_commit "$case_dir/outside"
+  ln -s "$case_dir/outside" "$home/projects/escapee"
+  out=$(run_home_trust "$config" "$home" nonrepo-n1)
+  expect_code 0 $? "stray entries under projects/ must not refuse the home: $out"
+  assert_all_flags "$store" "$home" "the home lost its registration over a stray projects/ entry"
+  assert_all_flags "$store" "$home/projects/alpha" "a real clone was skipped alongside the stray entries"
+  assert_no_entry "$store" "$home/projects/notes" "a non-repository directory was registered"
+  assert_no_entry "$store" "$home/projects/loose.txt" "a loose file was registered"
+  assert_no_entry "$store" "$home/projects/escapee" "a clone symlinked outside the home was registered"
+  assert_no_entry "$store" "$case_dir/outside" "a checkout outside the home was registered"
+  pass "fm-claude-trust.sh: non-checkout entries under projects/ are skipped, not registered"
+}
+
+test_project_mode_registers_a_plain_project_checkout
+test_project_mode_resolves_a_linked_worktree_to_its_primary_checkout
+test_project_mode_refuses_anything_that_is_not_a_checkout_root
+test_project_mode_refuses_a_declined_project
+test_secondmate_home_registers_its_project_clones
+test_secondmate_home_skips_a_declined_project_clone
+test_secondmate_home_skips_non_checkout_entries_under_projects

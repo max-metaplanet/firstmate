@@ -739,8 +739,11 @@ git -C "$T/home" init -q -b main
 out=$(CLAUDE_CONFIG_DIR="$T/config" "$TRUST" --lab-home "$T/home" 2>&1)
 expect_code 0 "$?" "a marked lab primary checkout is trusted: $out"
 TH=$(cd -P "$T/home" && pwd -P)
-node -e 'const j=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8"));process.exit(j.projects[process.argv[2]].hasTrustDialogAccepted===true&&!("hasClaudeMdExternalIncludesApproved" in j.projects[process.argv[2]])?0:1)' \
-  "$T/config/.claude.json" "$TH" || fail "lab-home trust is trust-only"
+# A lab primary is a directory a claude launch starts in, so it takes the
+# external-CLAUDE.md-import approval alongside the trust flag like every other
+# registered entry; bin/fm-live-lab.sh removes the whole entry at teardown.
+node -e 'const j=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8"));const e=j.projects[process.argv[2]];process.exit(["hasTrustDialogAccepted","hasClaudeMdExternalIncludesApproved","hasClaudeMdExternalIncludesWarningShown"].every((f)=>e[f]===true)?0:1)' \
+  "$T/config/.claude.json" "$TH" || fail "lab-home registration did not carry trust and the standing import consent"
 
 mkdir -p "$T/plain/bin"
 cp "$ROOT/AGENTS.md" "$T/plain/AGENTS.md"

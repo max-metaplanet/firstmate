@@ -167,6 +167,7 @@ If validation, cloning, no-mistakes initialization, or registry update fails, ge
 Secondmate project lists may include `no-mistakes` and `direct-PR` projects only.
 `local-only` projects stay with the main firstmate.
 For `no-mistakes` projects, seeding initializes only projects newly cloned into a secondmate home and refuses to mutate a preexisting clone that is not already initialized.
+A claude spawn into the home registers the home and every project clone under its `projects/` through `bin/fm-claude-trust.sh --secondmate-home`, so a clone added between launches is covered by the next launch; register one immediately with `bin/fm-claude-trust.sh --project <home>/projects/<name>` on that home's own host when a claude launch there must not wait for it, and on a remote home run that through `bin/fm-on.sh <id> fm-claude-trust.sh --project ...` rather than editing that host's Claude config by hand.
 
 ## Record intake for an existing or inherited domain
 

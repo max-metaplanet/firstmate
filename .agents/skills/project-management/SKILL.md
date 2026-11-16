@@ -67,6 +67,7 @@ A forge composes with `no-mistakes`, `direct-PR`, and `no-mistakes-prod-only` (`
 
 Confirm the source URL, local project name, delivery posture, and autonomy posture, stating the resolved default for each rather than asking the captain to invent one.
 Clone into `projects/<name>` and add the registry entry only after the destination is known to be unused.
+Then run `bin/fm-claude-trust.sh --project projects/<name>` once, so a claude launch that starts in that checkout directly never meets the workspace-trust or external-CLAUDE.md-import dialog; a spawn into a task worktree of the clone registers the same entry on its own, so this step is what covers the direct launch rather than the next wedge.
 A `no-mistakes` or `no-mistakes-prod-only` project must have an `origin` remote and must complete the initialization procedure below, because a conditional policy's product-facing work runs the pipeline while its internal-only work still takes the direct PR.
 A `direct-PR` project needs an `origin` remote but skips no-mistakes initialization.
 A `local-only` project may have no remote and skips no-mistakes initialization.
