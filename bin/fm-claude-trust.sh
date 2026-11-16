@@ -52,7 +52,7 @@
 # opposite shape: every entry this script registers receives both import flags
 # UNLESS that entry records an explicit prior decline. An absent flag, a
 # never-asked default pair, and a prior "Yes, allow" all take the approval.
-# What still refuses is the one thing the standing consent does not reach: a
+# What stays unchanged is the one thing the standing consent does not reach: a
 # human who answered "No, disable" in this very store. That pair is preserved
 # below exactly as it was, because standing consent to skip a dialog is not
 # consent to reverse an answer a human already gave.
@@ -71,27 +71,27 @@
 # that root is never the worktree - Claude Code's own git-root canonicalization
 # walks a linked worktree's `.git` file through its `commondir` pointer back to
 # the PRIMARY CHECKOUT, exactly the <project> argument this script already
-# receives for the worktree-mode scope test below. So every mode registers BOTH
-# the directory the launch starts in (for trust's ancestor-walk fallback and
-# defense in depth) and the canonical checkout that directory collapses to (the
-# only place the external-imports check ever looks). Registering either is a
+# receives for the worktree-mode scope test below. Every mode registers the
+# launch directory and, when distinct, its canonical checkout; secondmate-home
+# mode also registers each eligible project clone and its canonical checkout.
+# Registering either is a
 # write to the launching user's OWN Claude config store, keyed by a directory
 # PATH the scope test below has already verified is real - not a write to the
 # project's tracked content, so hard rule 1 does not apply.
 #
-# AN EXPLICIT DECLINE STILL REFUSES. If a registered entry already carries
+# AN EXPLICIT DECLINE KEEPS ITS IMPORT FLAGS. Every registered entry receives
+# hasTrustDialogAccepted, in every mode. If that entry already carries
 # hasClaudeMdExternalIncludesApproved===false WITH
-# hasClaudeMdExternalIncludesWarningShown===true - the pair Claude Code writes
-# on an explicit "No, disable" answer - that entry is never flipped, because
-# doing so would reverse a human's own answer in their own store. For the
-# directories a launch actually starts in the whole registration refuses, so
-# the spawn stops on a named refusal rather than being launched into a dialog;
-# for a secondmate home's project clones, which are registered alongside the
-# home rather than launched into by this spawn, the declined clone is skipped
-# and the rest of the registration still lands. Approved===false with
-# WarningShown false or absent is NOT that decision: Claude Code's default
-# project entry carries both flags as false before the dialog was ever shown,
-# so that pair means "never asked" and takes the standing consent.
+# hasClaudeMdExternalIncludesWarningShown===true, its two import flags are read
+# but never assigned: standing consent does not reverse a human's own answer.
+# Every other entry receives both import flags. A decline neither refuses the
+# registration nor skips any key. Verified live on 2026-11-16 with claude
+# 2.1.325 on the Lima fleet VM, tmux 3.6: a trusted project with that decline
+# pair and a Project-type external import reached the composer without either
+# dialog. WarningShown alone suppresses the imports dialog while Approved
+# false keeps the import excluded; docs/verification/claude-external-imports.md
+# records the command and evidence. Approved false with WarningShown false or
+# absent is the never-asked default, so it takes the standing consent.
 #
 # THE SCOPE TEST IS THE SAFETY PROPERTY, and it is STRUCTURAL rather than a
 # path policy. Each mode has its own, because the directories have entirely
@@ -351,11 +351,6 @@ if [ -n "${HOME:-}" ]; then
   [ "$TARGET_REAL" != "${HOME_REAL:-}" ] || refuse "'$TARGET_REAL' is the home directory, not a $SCOPE_NOUN"
 fi
 
-# LAUNCH_KEYS are the project-config entries for directories a claude launch
-# actually starts in, so an explicit prior decline on any of them refuses the
-# whole registration. CLONE_KEYS are registered alongside them without being
-# launched into by this call, so a declined one is skipped and the rest still
-# lands. Each mode's scope test below fills them and nothing else may.
 LAUNCH_KEYS=()
 CLONE_KEYS=()
 
@@ -530,10 +525,6 @@ fi
 # attempt, so a single rename either records all of it or none of it - there is
 # no state where one entry is fresh and another stale.
 #
-# The trust flag and the two external-imports flags now move together on each
-# entry, under the standing consent recorded at the top of this script: an
-# entry that records no explicit decline takes both. The only gate left is that
-# decline, and it is applied per entry rather than per mode.
 TRUST_FLAG='hasTrustDialogAccepted'
 IMPORT_FLAGS='["hasClaudeMdExternalIncludesApproved","hasClaudeMdExternalIncludesWarningShown"]'
 # The two key lists travel as plain argv rather than as JSON, because encoding
@@ -550,8 +541,6 @@ const importFlags = JSON.parse(importFlagsJson);
 const keyArgs = process.argv.slice(6);
 const launchKeys = keyArgs.slice(0, Number(launchCount));
 const cloneKeys = keyArgs.slice(Number(launchCount));
-// One flag set for every entry: the standing consent recorded at the top of
-// this script covers the import pair wherever the trust flag goes.
 const entryFlags = [trustFlag, ...importFlags];
 const readStore = () => {
   try {
@@ -573,16 +562,6 @@ const setFlags = (projects, key, flags) => {
 };
 const flagsLanded = (projects, key, flags) =>
   flags.every((flag) => projects?.[key]?.[flag] === true);
-// A project entry is the launching user's OWN interactive config, not a
-// throwaway worktree, so a registration must never silently reverse a decision
-// the human already recorded there. hasClaudeMdExternalIncludesApproved===false
-// together with hasClaudeMdExternalIncludesWarningShown===true is exactly that
-// decision (the dialog's "No, disable" answer writes that pair; Claude Code's
-// default project entry carries Approved===false with WarningShown===false,
-// which means never asked, not declined); flipping it to true would grant every
-// future interactive session in that checkout silent external-file inclusion
-// the human declined. The captain's standing consent covers a dialog nobody has
-// answered, not an answer already given, so this one state still refuses.
 const declinedExternalImports = (projects, key) =>
   projects?.[key]?.hasClaudeMdExternalIncludesApproved === false &&
   projects?.[key]?.hasClaudeMdExternalIncludesWarningShown === true;
@@ -604,31 +583,19 @@ const attempt = () => {
   if (projects === null || typeof projects !== "object" || Array.isArray(projects)) {
     throw new Error(`${store} has a non-object "projects" value`);
   }
-  // A declined entry a launch starts in refuses the whole registration, so the
-  // caller stops on a named reason instead of launching into the dialog. A
-  // declined project clone is only skipped: it is registered alongside the
-  // home rather than launched into here, and refusing the home over it would
-  // strand a spawn that has nothing to do with that clone.
-  for (const key of launchKeys) {
-    if (declinedExternalImports(projects, key)) {
-      throw new Error(
-        `project entry for ${key} in ${store} already declined external CLAUDE.md imports; refusing to override that consent. To recover, remove hasClaudeMdExternalIncludesApproved and hasClaudeMdExternalIncludesWarningShown from that project entry and approve the imports dialog interactively once`,
-      );
-    }
-  }
-  const registered = [];
-  for (const key of launchKeys) registered.push(["launch", key]);
-  for (const key of cloneKeys) {
-    if (declinedExternalImports(projects, key)) continue;
-    registered.push(["clone", key]);
-  }
+  const registered = [
+    ...launchKeys.map((key) => ["launch", key]),
+    ...cloneKeys.map((key) => ["clone", key]),
+  ];
   const keys = [];
   const seen = new Set();
   for (const [role, key] of registered) {
     if (seen.has(key)) continue;
     seen.add(key);
-    setFlags(projects, key, entryFlags);
-    keys.push([role, key, entryFlags]);
+    const declined = declinedExternalImports(projects, key);
+    const flags = declined ? [trustFlag] : entryFlags;
+    setFlags(projects, key, flags);
+    keys.push([declined ? "declined" : role, key, flags]);
   }
   // Unpredictable name plus an exclusive create: the config directory may be
   // writable by another local account, and a predictable path could be
@@ -651,10 +618,10 @@ const attempt = () => {
     if (!renamed) fs.rmSync(tmp, { force: true });
   }
   const back = JSON.parse(fs.readFileSync(store, "utf8"));
-  const landed = keys.every(([, key, flags]) => flagsLanded(back.projects, key, flags));
+  const landed = keys.every(([role, key, flags]) =>
+    flagsLanded(back.projects, key, flags) &&
+    (role !== "declined" || declinedExternalImports(back.projects, key)));
   if (!landed) return "dropped";
-  // The caller formats one outcome line per entry and cannot re-derive which
-  // clones were skipped, so the registered set is reported back here.
   return keys.map(([role, key]) => `${role} ${key}`).join("\n");
 };
 try {
@@ -686,7 +653,9 @@ while IFS= read -r registered_line; do
   [ -n "$registered_line" ] || continue
   registered_role=${registered_line%% *}
   registered_key=${registered_line#* }
-  if [ "$registered_key" = "$TARGET_REAL" ]; then
+  if [ "$registered_role" = declined ]; then
+    echo "trusted: $registered_key; project keeps its recorded external-imports decline in $STORE"
+  elif [ "$registered_key" = "$TARGET_REAL" ]; then
     echo "trusted: $registered_key"
   elif [ "$registered_role" = clone ]; then
     echo "trusted (project clone): $registered_key"

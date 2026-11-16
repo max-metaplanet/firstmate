@@ -46,7 +46,9 @@ function Dt(e){try{return qt(e,K(S(e,".git"),"utf-8"))}catch{return e}}
 ```
 
 `Dt` reads a linked worktree's `.git` file, follows its `gitdir:` pointer to that worktree's git dir, reads `commondir`, and returns the common dir's parent.
-A linked worktree therefore keys its project config to the PRIMARY CHECKOUT, which is why every registration writes the launch directory and the canonical checkout it collapses to.
+A linked worktree therefore keys its project config to the PRIMARY CHECKOUT.
+Registration covers the launch directory and its canonical checkout, writing one entry when those paths coincide.
+Secondmate-home mode also covers eligible project clones and their canonical checkouts.
 
 ### An answer writes both flags
 
@@ -92,3 +94,16 @@ Run on 2026-11-16 on the Lima fleet VM, tmux 3.6, claude 2.1.325, against a disp
 
 The disposable checkout and its two store entries were removed afterwards.
 [`tests/fm-claude-trust.test.sh`](../../tests/fm-claude-trust.test.sh) is the portable regression that pins the written shape without a harness.
+
+### A recorded decline suppresses the dialog
+
+Verified live on 2026-11-16 on the Lima fleet VM with claude 2.1.325 and tmux 3.6.
+A disposable git checkout had a Project-type `CLAUDE.md` containing `@../outside/EXTERNAL.md` and this exact project entry in `~/.claude.json`:
+
+```json
+{"hasTrustDialogAccepted":true,"hasClaudeMdExternalIncludesApproved":false,"hasClaudeMdExternalIncludesWarningShown":true}
+```
+
+Launched as `claude --setting-sources project,local --permission-mode auto`, it reached the composer with no dialog of either kind.
+This matches the show condition above: the imports dialog renders only when neither import flag is true.
+The disposable checkout and its store entry were removed afterwards.

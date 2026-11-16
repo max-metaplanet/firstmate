@@ -83,6 +83,18 @@ assert_all_flags() {
   ' "$store" "$key" || fail "$msg"
 }
 
+assert_decline_registered() {
+  local store=$1 key=$2 out=$3
+  assert_trusted "$store" "$key" "workspace trust was not registered for a declined entry"
+  assert_store_value "$store" false "the recorded decline was flipped" \
+    projects "$key" hasClaudeMdExternalIncludesApproved
+  assert_store_value "$store" true "the recorded warning flag changed" \
+    projects "$key" hasClaudeMdExternalIncludesWarningShown
+  assert_contains "$out" "project keeps its recorded external-imports decline" "the outcome omitted the preserved decline"
+  assert_contains "$out" "$key" "the outcome omitted the project path"
+  assert_contains "$out" "$store" "the outcome omitted the store path"
+}
+
 # assert_no_entry <store> <path> <msg>: the store holds no project entry at
 # <path> at all - the shape a registration must leave behind for an entry it
 # deliberately skipped, so a skip is provably a skip rather than a partial
@@ -174,9 +186,7 @@ test_fresh_worktree_is_trusted() {
 # entries carry every flag after one registration. On a genuinely fresh
 # project - no prior interactive answer at all - the captain's standing
 # consent is what the import flags rest on, so the dialog is suppressed
-# without a human ever being asked. The one state that still refuses is an
-# explicit decline; see
-# test_project_root_entry_declined_external_imports_is_not_overridden.
+# without a human ever being asked.
 test_fresh_worktree_also_registers_the_project_root_import_consent() {
   local rec out
   rec=$(make_case fresh-project)
@@ -232,32 +242,20 @@ JSON
   pass "fm-claude-trust.sh: preserves unrelated keys on the project-root entry"
 }
 
-# hasClaudeMdExternalIncludesApproved===false with WarningShown===true on the
-# project-root entry is a human's explicit "No, disable" answer, recorded in the SAME store their own
-# interactive sessions read. A spawn must never flip that to true on their
-# behalf: doing so would grant every later interactive session in that
-# checkout silent external-file inclusion the human declined. The whole
-# registration refuses instead, and the store - including the worktree entry,
-# which is never reached - must come back byte-for-byte unchanged.
 test_project_root_entry_declined_external_imports_is_not_overridden() {
-  local rec store out before after
+  local rec store out
   rec=$(make_case project-decline)
   read_case "$rec"
   store="$CONFIG/.claude.json"
   cat > "$store" <<JSON
-{"hasCompletedOnboarding":true,"projects":{"$PROJ":{"hasTrustDialogAccepted":true,"hasClaudeMdExternalIncludesApproved":false,"hasClaudeMdExternalIncludesWarningShown":true,"allowedTools":["Read"]}}}
+{"hasCompletedOnboarding":true,"projects":{"$PROJ":{"hasTrustDialogAccepted":false,"hasClaudeMdExternalIncludesApproved":false,"hasClaudeMdExternalIncludesWarningShown":true,"allowedTools":["Read"]}}}
 JSON
-  before=$(cat "$store")
   out=$(run_trust "$CONFIG" "$WT" "$PROJ")
-  expect_code 1 $? "a project that already declined external imports must be refused: $out"
-  assert_contains "$out" "declined external CLAUDE.md imports" \
-    "the refusal did not name the declined-consent reason"
-  assert_contains "$out" "approve the imports dialog interactively" \
-    "the refusal did not name the recovery"
-  after=$(cat "$store")
-  [ "$before" = "$after" ] || fail "the store was modified despite the refusal"
-  assert_not_trusted "$store" "$WT" "the worktree entry was registered despite the refusal"
-  pass "fm-claude-trust.sh: refuses to override a project's declined external-imports consent"
+  expect_code 0 $? "a recorded decline must not block workspace trust: $out"
+  assert_decline_registered "$store" "$PROJ" "$out"
+  assert_all_flags "$store" "$WT" "the other registration key did not receive all flags"
+  assert_store_value "$store" '["Read"]' "unrelated project settings changed" projects "$PROJ" allowedTools
+  pass "fm-claude-trust.sh: registers workspace trust while preserving a project's import decline"
 }
 
 # Claude Code's own default project entry carries BOTH external-imports flags as
@@ -1013,12 +1011,8 @@ test_project_mode_refuses_anything_that_is_not_a_checkout_root() {
   pass "fm-claude-trust.sh: --project refuses anything that is not a checkout root"
 }
 
-# The standing consent covers a dialog nobody answered, never an answer a
-# human already gave, and project mode registers the directory a launch starts
-# in - so a prior "No, disable" refuses here exactly as it does in worktree
-# mode rather than being flipped.
-test_project_mode_refuses_a_declined_project() {
-  local case_dir config checkout store before after out
+test_project_mode_preserves_a_declined_project() {
+  local case_dir config checkout store out
   case_dir="$TMP_ROOT/project-declined"
   config="$case_dir/claude-config"
   checkout="$case_dir/project"
@@ -1026,18 +1020,12 @@ test_project_mode_refuses_a_declined_project() {
   fm_git_init_commit "$checkout"
   store="$config/.claude.json"
   cat > "$store" <<JSON
-{"hasCompletedOnboarding":true,"projects":{"$checkout":{"hasTrustDialogAccepted":true,"hasClaudeMdExternalIncludesApproved":false,"hasClaudeMdExternalIncludesWarningShown":true}}}
+{"hasCompletedOnboarding":true,"projects":{"$checkout":{"hasTrustDialogAccepted":false,"hasClaudeMdExternalIncludesApproved":false,"hasClaudeMdExternalIncludesWarningShown":true}}}
 JSON
-  before=$(cat "$store")
   out=$(run_project_trust "$config" "$checkout")
-  expect_code 1 $? "a declined project must be refused: $out"
-  assert_contains "$out" "declined external CLAUDE.md imports" \
-    "the refusal did not name the declined-consent reason"
-  assert_contains "$out" "approve the imports dialog interactively" \
-    "the refusal did not name the recovery"
-  after=$(cat "$store")
-  [ "$before" = "$after" ] || fail "the store was modified despite the refusal"
-  pass "fm-claude-trust.sh: --project refuses to override a declined project"
+  expect_code 0 $? "a declined project must receive workspace trust: $out"
+  assert_decline_registered "$store" "$checkout" "$out"
+  pass "fm-claude-trust.sh: --project registers trust while preserving the import decline"
 }
 
 # --- a secondmate home's project clones -------------------------------------
@@ -1070,10 +1058,7 @@ test_secondmate_home_registers_its_project_clones() {
   pass "fm-claude-trust.sh: a secondmate home registers its project clones"
 }
 
-# A clone the human declined is not the directory this spawn launches into, so
-# it is skipped rather than refusing the home and stranding the spawn - and the
-# declined entry itself must come back untouched.
-test_secondmate_home_skips_a_declined_project_clone() {
+test_secondmate_home_preserves_a_declined_project_clone() {
   local case_dir config home store out
   case_dir="$TMP_ROOT/sm-clone-declined"
   config="$case_dir/claude-config"
@@ -1090,10 +1075,8 @@ JSON
   expect_code 0 $? "a declined clone must not refuse the whole home: $out"
   assert_all_flags "$store" "$home" "the home lost its registration over a declined clone"
   assert_all_flags "$store" "$home/projects/alpha" "an undeclined clone lost its registration"
-  assert_store_value "$store" false "the declined clone's answer was flipped" \
-    projects "$home/projects/beta" hasClaudeMdExternalIncludesApproved
-  assert_not_trusted "$store" "$home/projects/beta" "the declined clone was registered anyway"
-  pass "fm-claude-trust.sh: a declined project clone is skipped without refusing the home"
+  assert_decline_registered "$store" "$home/projects/beta" "$out"
+  pass "fm-claude-trust.sh: registers a declined clone's trust without changing its import flags"
 }
 
 # Everything else under projects/ is skipped silently rather than registered or
@@ -1128,7 +1111,63 @@ test_secondmate_home_skips_non_checkout_entries_under_projects() {
 test_project_mode_registers_a_plain_project_checkout
 test_project_mode_resolves_a_linked_worktree_to_its_primary_checkout
 test_project_mode_refuses_anything_that_is_not_a_checkout_root
-test_project_mode_refuses_a_declined_project
+test_project_mode_preserves_a_declined_project
 test_secondmate_home_registers_its_project_clones
-test_secondmate_home_skips_a_declined_project_clone
+test_secondmate_home_preserves_a_declined_project_clone
 test_secondmate_home_skips_non_checkout_entries_under_projects
+
+test_declines_are_preserved_at_every_registration_key() {
+  local scenario case_dir config primary target declined store out key
+  local keys=() args=()
+  for scenario in worktree-launch worktree-root project-launch project-root home-launch home-root clone-launch clone-root lab; do
+    case_dir="$TMP_ROOT/decline-$scenario"
+    config="$case_dir/config"
+    primary="$case_dir/primary"
+    target="$case_dir/target"
+    store="$config/.claude.json"
+    mkdir -p "$config"
+    case "$scenario" in
+      worktree-*|project-*)
+        fm_git_worktree "$primary" "$target" "decline-$scenario"
+        keys=("$target" "$primary")
+        case "$scenario" in
+          worktree-*) args=("$target" "$primary") ;;
+          project-*) args=(--project "$target") ;;
+        esac
+        ;;
+      home-*)
+        seed_secondmate_home "$target" decline-n1 worktree
+        keys=("$target" "$target.src")
+        args=(--secondmate-home "$target" decline-n1)
+        ;;
+      clone-*)
+        seed_secondmate_home "$target" decline-n1 clone
+        fm_git_worktree "$target/projects/primary" "$target/projects/linked" "decline-$scenario"
+        keys=("$target/projects/linked" "$target/projects/primary" "$target")
+        args=(--secondmate-home "$target" decline-n1)
+        ;;
+      lab)
+        fm_git_init_commit "$target"
+        mkdir -p "$target/bin"
+        printf '# Firstmate\n' > "$target/AGENTS.md"
+        printf 'fm-lab-home v1\n' > "$target/.fm-lab-home"
+        keys=("$target")
+        args=(--lab-home "$target")
+        ;;
+    esac
+    case "$scenario" in
+      *-root) declined=${keys[1]} ;;
+      *) declined=${keys[0]} ;;
+    esac
+    node -e 'require("node:fs").writeFileSync(process.argv[1], JSON.stringify({projects:{[process.argv[2]]:{hasTrustDialogAccepted:false,hasClaudeMdExternalIncludesApproved:false,hasClaudeMdExternalIncludesWarningShown:true}}}))' "$store" "$declined"
+    out=$(CLAUDE_CONFIG_DIR="$config" HOME="$config" "$TRUST" "${args[@]}" 2>&1)
+    expect_code 0 $? "$scenario registration failed: $out"
+    assert_decline_registered "$store" "$declined" "$out"
+    for key in "${keys[@]}"; do
+      [ "$key" = "$declined" ] || assert_all_flags "$store" "$key" "$scenario left another key unregistered"
+    done
+    pass "fm-claude-trust.sh: $scenario preserves declines and registers every key"
+  done
+}
+
+test_declines_are_preserved_at_every_registration_key

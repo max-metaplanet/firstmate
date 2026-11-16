@@ -34,21 +34,20 @@ A second, separate dialog - "Allow external CLAUDE.md file imports?" - renders w
 A User-type `~/.claude/CLAUDE.md` does not trigger it, whatever that file itself imports.
 `--setting-sources project,local` (the minimal worker tool surface) does not suppress it either, and it gates the pane exactly like the trust dialog: cursor on "No, disable external imports", no way to move the selection from firstmate's steering plane.
 
-`../../../bin/fm-claude-trust.sh` records `hasTrustDialogAccepted` and the two external-imports flags (`hasClaudeMdExternalIncludesApproved`, `hasClaudeMdExternalIncludesWarningShown`) together on every entry it registers, in `${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json`, where a home's worker account pin decides `CLAUDE_CONFIG_DIR` (`../../../docs/configuration.md` "Worker account pin").
-A ship or scout spawn registers the task worktree and its primary checkout; a secondmate spawn registers its home and each project clone under that home's `projects/`; `--project <checkout>` registers one checkout a claude launch starts in directly, which is how a newly cloned or added project is registered rather than waiting for the next wedge.
-The import flags rest on the captain's standing consent of 2026-11-16, so an absent flag, a never-asked default pair, and a prior approval all take them.
-The one state that still refuses is an explicit decline (`hasClaudeMdExternalIncludesApproved===false` with `hasClaudeMdExternalIncludesWarningShown===true`): a declined directory a launch starts in refuses the whole registration rather than reversing a human's own answer, while a declined project clone is skipped and the rest of that home's registration still lands.
-Both flags `false` is Claude Code's default entry for a project never asked, not a decline, and takes the standing consent.
-The why-two-entries mechanism and the consent-gating logic live in the script's own header comment, which is the one owner for that contract; the fact worth repeating here is that `../../../bin/fm-spawn.sh` refuses the spawn when the registration fails to land, rather than launching a worker that would wedge on that dialog.
+`../../../bin/fm-claude-trust.sh` owns workspace-trust registration, canonical checkout keys, and the per-entry import-consent rule in its header comment.
+The store is `${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json`, where a home's worker account pin decides `CLAUDE_CONFIG_DIR` (`../../../docs/configuration.md` "Worker account pin").
+A recorded import decline stays unchanged while workspace trust is registered, including for project clones.
+`../../../bin/fm-spawn.sh` refuses the spawn when registration fails to land.
 
 Never try to answer either dialog with a key.
 Firstmate's key plane carries only Enter, Escape, and C-c with no arrow navigation, so it cannot move a dialog's selection at all, and both dialogs render with the cursor on their declining option, which means a sent Enter ends the session instead of accepting.
-A visible trust dialog means pre-registration did not take effect (or the project entry already carries an explicit decline) - inspect the store and the spawn's error output rather than sending keys.
-A visible external-imports dialog now means the same thing: the directory the pane started in was never registered, or its entry carries an explicit decline.
+A visible trust dialog means pre-registration did not take effect - inspect the store and the spawn's error output rather than sending keys.
+A visible external-imports dialog means pre-registration did not take effect at the canonical project entry.
+A recorded decline suppresses that dialog by itself.
 `fm-control.sh <id> interrupt` delivers Escape, which is the safe way to clear a wedged workspace-trust dialog for inspection without answering it.
-Escape on the external-imports dialog is different: it records a permanent decline (`hasClaudeMdExternalIncludesApproved: false`, `hasClaudeMdExternalIncludesWarningShown: true`) that `../../../bin/fm-claude-trust.sh` then correctly refuses to override on every later registration for that project.
+Escape on the external-imports dialog is different: it records a permanent decline (`hasClaudeMdExternalIncludesApproved: false`, `hasClaudeMdExternalIncludesWarningShown: true`) that `../../../bin/fm-claude-trust.sh` preserves on later registrations for that project.
 Leave a pane showing the external-imports dialog alone and register the directory instead of interrupting it.
-To recover from an already-recorded decline, remove both flags from the project's entry in `~/.claude.json` and approve the imports dialog once by hand.
+The registration outcome names the project and store where its decline remains recorded.
 
 The once-per-machine bypass-permissions confirmation is a third, separate dialog, scoped to the machine rather than the path, and pre-registration does not address it.
 Never send Enter to that one either: it was observed rendering in the same shape as the trust dialog, with the selection on `No, exit` and the footer `Enter to confirm . Esc to cancel`, so Enter ends the session rather than accepting.
