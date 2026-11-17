@@ -145,6 +145,8 @@ else
 fi
 printf '%s\n' "$*" >> "${QUOTA_AXI_CALLS:?}"
 printf '%s\n' "${CODEX_HOME:-}" > "${QUOTA_AXI_CALLS}.codex-home"
+printf '%s\n' "${CLAUDE_CONFIG_DIR:-}" > "${QUOTA_AXI_CALLS}.claude-home"
+printf '%s\n' "${GROK_HOME:-}" > "${QUOTA_AXI_CALLS}.grok-home"
 [ "${FAKE_QUOTA_FAIL:-0}" = 1 ] && exit 1
 if [ "${1:-}" = --provider ]; then
   printf '%s\n' "${CLAUDE_CONFIG_DIR-}" > "${FAKE_SEAT_PROFILE_LOG:?}"
@@ -1470,6 +1472,20 @@ printf 'selected\n' > "$HOME_DIR/config/codex-seat"
 TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --codex-alternative --json
 assert_equals "$TMP_ROOT/codex-seats/selected" "$(cat "$LOG/quota-axi.calls.codex-home")" "dispatch quota reads selected Codex home"
 pass "dispatch evidence uses the Codex home a new native worker will launch on"
+
+for provider in claude grok; do
+  mkdir -p "$TMP_ROOT/$provider-seats/selected"
+  printf '{}\n' > "$TMP_ROOT/$provider-seats/selected/auth.json"
+  printf '%s\n' "$TMP_ROOT/$provider-seats" > "$HOME_DIR/config/$provider-seats-root"
+  printf 'selected\n' > "$HOME_DIR/config/$provider-seat"
+done
+CLAUDE_CONFIG_DIR="$TMP_ROOT/stale-claude" GROK_HOME="$TMP_ROOT/stale-grok" \
+  TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --codex-alternative --json
+for provider in claude grok; do
+  assert_equals "$TMP_ROOT/$provider-seats/selected" "$(cat "$LOG/quota-axi.calls.$provider-home")" "dispatch quota reads selected $provider home"
+  rm "$HOME_DIR/config/$provider-seat" "$HOME_DIR/config/$provider-seats-root"
+done
+pass "typed dispatch reads Claude and Grok launch seats instead of stale ambient homes"
 
 # A free OpenCode model outranks the paid candidate, then a sensitive target
 # path removes it after classification. A routine path keeps the free model.

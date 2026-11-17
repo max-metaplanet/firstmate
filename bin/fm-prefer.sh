@@ -129,9 +129,7 @@ cmd_set() {
       raw=${raw#"${raw%%[![:space:]]*}"}
       key=${raw%%=*}
       key=${key%"${key##*[![:space:]]}"}
-      case "$key" in
-        "$kind") continue ;;
-      esac
+      [ "$key" != "$kind" ] || continue
       printf '%s\n' "$line"
     done < "$PREFER_FILE")
   fi

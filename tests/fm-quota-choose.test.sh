@@ -829,4 +829,87 @@ grep -Fq 'is not a verified harness' "$LAB/kind-unknown.err" \
 rm -f "$PREFER_HOME/config/dispatch-prefer"
 ok "--kind refuses a malformed preference file"
 
+python3 - "$BIN/fm-quota-read.sh" "$LAB" <<'PYSEATS' || fail "dispatch seat read state model"
+import json
+import os
+from pathlib import Path
+import random
+import subprocess
+import sys
+
+reader, lab = sys.argv[1:]
+root = Path(lab) / "seat-model"
+config = root / "home" / "config"
+config.mkdir(parents=True)
+fakebin = root / "bin"
+fakebin.mkdir()
+fake = fakebin / "quota-axi"
+fake.write_text("""#!/usr/bin/env python3
+import json, os, sys
+print(json.dumps({"homes": [os.environ.get(k) for k in
+    ("CLAUDE_CONFIG_DIR", "CODEX_HOME", "GROK_HOME")],
+    "secure_storage": os.environ.get("CLAUDE_SECURESTORAGE_CONFIG_DIR"),
+    "args": sys.argv[1:]}))
+""")
+fake.chmod(0o755)
+providers = ["claude", "codex", "grok"]
+variables = ["CLAUDE_CONFIG_DIR", "CODEX_HOME", "GROK_HOME"]
+env = dict(os.environ, PATH=str(fakebin) + os.pathsep + os.environ["PATH"],
+           FM_HOME=str(config.parent), FM_CONFIG_OVERRIDE=str(config),
+           CLAUDE_SECURESTORAGE_CONFIG_DIR="stale-secure-storage")
+env.pop("FM_AMBIENT_CLAUDE_CONFIG_DIR", None)
+for provider, variable in zip(providers, variables):
+    env[variable] = str(root / (provider + "-ambient"))
+    seats = root / (provider + "-seats")
+    for name in ["a", "b"]:
+        seat = seats / name
+        seat.mkdir(parents=True)
+        (seat / "auth.json").write_text("{}")
+    (config / (provider + "-seats-root")).write_text(str(seats))
+
+seed = 73021
+rng = random.Random(seed)
+state = {p: None for p in providers}
+transitions = [(p, s) for p in providers for s in ["a", "b", None, "default"]]
+transitions += [(rng.choice(providers), rng.choice(["a", "b", None, "default"]))
+                for _ in range(18)]
+for step, (provider, seat) in enumerate(transitions):
+    state[provider] = seat
+    setting = config / (provider + "-seat")
+    if seat is None:
+        setting.unlink(missing_ok=True)
+    else:
+        setting.write_text(seat + "\n")
+    args = [[], ["--json"], ["auth", "--json"]][step % 3]
+    result = subprocess.run(["bash", reader, *args], env=env, text=True, capture_output=True)
+    expected = [str(root / (p + "-seats") / state[p])
+                if state[p] not in (None, "default") else env[v]
+                for p, v in zip(providers, variables)]
+    context = f"seed={seed} shortest failing prefix={transitions[:step + 1]}"
+    assert result.returncode == 0, (context, result.stderr)
+    actual = json.loads(result.stdout)
+    assert actual["homes"] == expected, (context, actual, expected)
+    assert actual["secure_storage"] is None, (context, actual)
+    assert actual["args"] == args + ["--no-credential-refresh"], (context, actual)
+
+# A file-level Codex alias must read the credential owner's home, like launch.
+owner = root / "credential-owner"
+owner.mkdir()
+(owner / "auth.json").write_text("{}")
+alias = root / "codex-seats" / "a" / "auth.json"
+alias.unlink()
+alias.symlink_to(owner / "auth.json")
+(config / "codex-seat").write_text("a\n")
+result = subprocess.run(["bash", reader], env=env, text=True, capture_output=True, check=True)
+assert json.loads(result.stdout)["homes"][1] == str(owner)
+
+# Invalid named home providers cannot silently read the ambient credential.
+for provider in ["codex", "grok"]:
+    (config / (provider + "-seat")).write_text("missing\n")
+    result = subprocess.run(["bash", reader], env=env, text=True, capture_output=True)
+    assert result.returncode != 0 and not result.stdout, (provider, result)
+    (config / (provider + "-seat")).unlink()
+print(f"ok - dispatch seat state model: seed={seed}, {len(transitions)} transitions, alias and missing-home refusal")
+PYSEATS
+
 printf '# all fm-quota-choose tests passed\n'

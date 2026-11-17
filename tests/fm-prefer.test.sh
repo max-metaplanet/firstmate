@@ -62,7 +62,7 @@ code='' out='' err=''
 run() {  # <exit-var> <out-var> <err-var> [args...]
   local __exit=$1 __out=$2 __err=$3 _out _code
   shift 3
-  _out=$(FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE="$ROOT" PUSH_LOG="$PUSH_LOG" "$TOOL" "$@" 2> "$TMP_ROOT/stderr")
+  _out=$(FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE="$ROOT" PUSH_LOG="$PUSH_LOG" "${FM_TEST_BASH:-bash}" "$TOOL" "$@" 2> "$TMP_ROOT/stderr")
   _code=$?
   printf -v "$__exit" '%s' "$_code"
   printf -v "$__out" '%s' "$_out"

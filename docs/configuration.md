@@ -2197,9 +2197,9 @@ After the answer, code applies all remaining checks and ranking:
 
 - The confidence floor and the matched rule's `approval` and `floor`.
 - Each candidate's `provider` and `floor`.
-- Every applicable account-wide and model/product row from one `quota-axi --json` snapshot.
+- Every applicable account-wide and model/product row from one snapshot collected by the [dispatch quota reader](../bin/fm-quota-read.sh) from the configured launch seats.
 - Ranking from each candidate's limiting row, subject to the [worker runtime preference](#worker-runtime-preference-configdispatch-prefer) contract above.
-- The [Claude seat dispatch gate](claude-seats.md#switching-automatically), using a separate bounded read of the active seat rather than the ambient Claude ranking row.
+- The [Claude seat dispatch gate](claude-seats.md#switching-automatically), using a separate bounded policy read of the active seat in addition to the ranking snapshot.
   A held Claude candidate is ineligible, and configured alternatives such as Codex remain subject to the existing quota and approval gates.
   A matched rule offers only its own candidates, so a Claude-only rule stays held; a below-floor rule still falls through to the default, whose Claude profiles are held the same way.
 - With `--codex-alternative`, used only by the [resting-worker Codex offer](claude-seats.md#resting-a-seat-below-a-quota-floor), only the matched rule's Codex candidates are ranked; no matched rule or a below-floor rule escalates instead of falling through to the default.
