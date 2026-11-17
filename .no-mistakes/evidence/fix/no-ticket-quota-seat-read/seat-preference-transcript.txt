@@ -1,0 +1,182 @@
+$ bash bin/fm-prefer.sh set implementation codex
+exit=0
+prefer codex for implementation
+  rule_1 declares kind=implementation and lists codex
+converging secondmate homes:
+config-push: no live secondmate homes found
+
+$ bash bin/fm-prefer.sh show
+exit=0
+preference file: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7KE9CPC59S5TAQ2V3K6VFM3/.test-live-seat/home/config/dispatch-prefer
+prefer claude for review
+  no rule in ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7KE9CPC59S5TAQ2V3K6VFM3/.test-live-seat/home/config/crew-dispatch.json declares kind=review, so this preference is a no-op until one does
+prefer codex for implementation
+  rule_1 declares kind=implementation and lists codex
+declared rule kinds in ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7KE9CPC59S5TAQ2V3K6VFM3/.test-live-seat/home/config/crew-dispatch.json:
+  rule_1: implementation
+
+$ bash bin/fm-prefer.sh set implementation auto
+exit=0
+no preference for implementation
+converging secondmate homes:
+config-push: no live secondmate homes found
+
+$ bash bin/fm-prefer.sh set implementation codex
+exit=0
+prefer codex for implementation
+  rule_1 declares kind=implementation and lists codex
+converging secondmate homes:
+config-push: no live secondmate homes found
+
+$ bash bin/fm-quota-read.sh auth --provider codex --full --json
+exit=0
+{
+  "generatedAt": "2026-11-17T00:32:25.138Z",
+  "schemaVersion": 1,
+  "auth": [
+    {
+      "provider": "codex",
+      "sources": [
+        {
+          "source": "auth-json",
+          "path": "~/.no-mistakes/worktrees/c0c4fcacb05a/01M7KE9CPC59S5TAQ2V3K6VFM3/.test-live-seat/seats/codex-max2/auth.json",
+          "status": "invalid"
+        },
+        {
+          "source": "pi:openai-codex",
+          "path": "~/.no-mistakes/worktrees/c0c4fcacb05a/01M7KE9CPC59S5TAQ2V3K6VFM3/.test-live-seat/user/.pi/agent/auth.json",
+          "status": "missing"
+        },
+        {
+          "source": "cli-rpc",
+          "path": "/run/user/501/fnm_multishells/3069192_1794875371846/bin/codex",
+          "status": "available"
+        }
+      ]
+    }
+  ]
+}
+dispatch quota: claude seat=default CLAUDE_CONFIG_DIR=~/.no-mistakes/worktrees/c0c4fcacb05a/01M7KE9CPC59S5TAQ2V3K6VFM3/.test-live-seat/claude
+dispatch quota: codex seat=codex-max2 CODEX_HOME=~/.no-mistakes/worktrees/c0c4fcacb05a/01M7KE9CPC59S5TAQ2V3K6VFM3/.test-live-seat/seats/codex-max2
+dispatch quota: grok seat=default GROK_HOME=~/.no-mistakes/worktrees/c0c4fcacb05a/01M7KE9CPC59S5TAQ2V3K6VFM3/.test-live-seat/grok
+
+$ bash bin/fm-quota-read.sh auth --provider codex --full --json
+exit=0
+{
+  "generatedAt": "2026-11-17T00:32:25.240Z",
+  "schemaVersion": 1,
+  "auth": [
+    {
+      "provider": "codex",
+      "sources": [
+        {
+          "source": "auth-json",
+          "path": "~/.no-mistakes/worktrees/c0c4fcacb05a/01M7KE9CPC59S5TAQ2V3K6VFM3/.test-live-seat/seats/codex-max/auth.json",
+          "status": "invalid"
+        },
+        {
+          "source": "pi:openai-codex",
+          "path": "~/.no-mistakes/worktrees/c0c4fcacb05a/01M7KE9CPC59S5TAQ2V3K6VFM3/.test-live-seat/user/.pi/agent/auth.json",
+          "status": "missing"
+        },
+        {
+          "source": "cli-rpc",
+          "path": "/run/user/501/fnm_multishells/3069192_1794875371846/bin/codex",
+          "status": "available"
+        }
+      ]
+    }
+  ]
+}
+dispatch quota: claude seat=default CLAUDE_CONFIG_DIR=~/.no-mistakes/worktrees/c0c4fcacb05a/01M7KE9CPC59S5TAQ2V3K6VFM3/.test-live-seat/claude
+dispatch quota: codex seat=codex-max CODEX_HOME=~/.no-mistakes/worktrees/c0c4fcacb05a/01M7KE9CPC59S5TAQ2V3K6VFM3/.test-live-seat/seats/codex-max
+dispatch quota: grok seat=default GROK_HOME=~/.no-mistakes/worktrees/c0c4fcacb05a/01M7KE9CPC59S5TAQ2V3K6VFM3/.test-live-seat/grok
+
+$ bash bin/fm-quota-read.sh auth --provider codex --full --json
+exit=0
+{
+  "generatedAt": "2026-11-17T00:32:25.339Z",
+  "schemaVersion": 1,
+  "auth": [
+    {
+      "provider": "codex",
+      "sources": [
+        {
+          "source": "auth-json",
+          "path": "~/.no-mistakes/worktrees/c0c4fcacb05a/01M7KE9CPC59S5TAQ2V3K6VFM3/.test-live-seat/seats/codex-max2/auth.json",
+          "status": "invalid"
+        },
+        {
+          "source": "pi:openai-codex",
+          "path": "~/.no-mistakes/worktrees/c0c4fcacb05a/01M7KE9CPC59S5TAQ2V3K6VFM3/.test-live-seat/user/.pi/agent/auth.json",
+          "status": "missing"
+        },
+        {
+          "source": "cli-rpc",
+          "path": "/run/user/501/fnm_multishells/3069192_1794875371846/bin/codex",
+          "status": "available"
+        }
+      ]
+    }
+  ]
+}
+dispatch quota: claude seat=default CLAUDE_CONFIG_DIR=~/.no-mistakes/worktrees/c0c4fcacb05a/01M7KE9CPC59S5TAQ2V3K6VFM3/.test-live-seat/claude
+dispatch quota: codex seat=codex-max2 CODEX_HOME=~/.no-mistakes/worktrees/c0c4fcacb05a/01M7KE9CPC59S5TAQ2V3K6VFM3/.test-live-seat/seats/codex-max2
+dispatch quota: grok seat=default GROK_HOME=~/.no-mistakes/worktrees/c0c4fcacb05a/01M7KE9CPC59S5TAQ2V3K6VFM3/.test-live-seat/grok
+
+$ bash bin/fm-quota-read.sh auth --provider codex --full --json
+exit=0
+{
+  "generatedAt": "2026-11-17T00:32:25.431Z",
+  "schemaVersion": 1,
+  "auth": [
+    {
+      "provider": "codex",
+      "sources": [
+        {
+          "source": "auth-json",
+          "path": "~/.no-mistakes/worktrees/c0c4fcacb05a/01M7KE9CPC59S5TAQ2V3K6VFM3/.test-live-seat/seats/codex-max2/auth.json",
+          "status": "invalid"
+        },
+        {
+          "source": "pi:openai-codex",
+          "path": "~/.no-mistakes/worktrees/c0c4fcacb05a/01M7KE9CPC59S5TAQ2V3K6VFM3/.test-live-seat/user/.pi/agent/auth.json",
+          "status": "missing"
+        },
+        {
+          "source": "cli-rpc",
+          "path": "/run/user/501/fnm_multishells/3069192_1794875371846/bin/codex",
+          "status": "available"
+        }
+      ]
+    }
+  ]
+}
+dispatch quota: claude seat=default CLAUDE_CONFIG_DIR=~/.no-mistakes/worktrees/c0c4fcacb05a/01M7KE9CPC59S5TAQ2V3K6VFM3/.test-live-seat/claude
+dispatch quota: codex seat=alias CODEX_HOME=~/.no-mistakes/worktrees/c0c4fcacb05a/01M7KE9CPC59S5TAQ2V3K6VFM3/.test-live-seat/seats/codex-max2
+dispatch quota: grok seat=default GROK_HOME=~/.no-mistakes/worktrees/c0c4fcacb05a/01M7KE9CPC59S5TAQ2V3K6VFM3/.test-live-seat/grok
+
+$ bash bin/fm-quota-read.sh auth --provider codex --full --json
+exit=1
+dispatch quota: claude seat=default CLAUDE_CONFIG_DIR=~/.no-mistakes/worktrees/c0c4fcacb05a/01M7KE9CPC59S5TAQ2V3K6VFM3/.test-live-seat/claude
+error: seat 'missing' has no profile directory at ~/.no-mistakes/worktrees/c0c4fcacb05a/01M7KE9CPC59S5TAQ2V3K6VFM3/.test-live-seat/seats/missing
+
+$ bash bin/fm-quota-read.sh auth --provider codex --full --json
+exit=1
+dispatch quota: claude seat=default CLAUDE_CONFIG_DIR=~/.no-mistakes/worktrees/c0c4fcacb05a/01M7KE9CPC59S5TAQ2V3K6VFM3/.test-live-seat/claude
+error: configured Codex seat is malformed; no fallback is allowed
+
+Credential hashes unchanged; preference update preserved the other kind and comments.
+
+$ ssh telos64 python3 (in-memory exact-source loader, base then target)
+exit=0
+base /bin/bash show exit=1
+/bin/bash: /dev/null/.bashrc: Not a directory
+/bin/bash: /dev/fd/3: line 133: syntax error near unexpected token `;;'
+/bin/bash: /dev/fd/3: line 133: `        "$kind") continue ;;'
+
+target /bin/bash show exit=0
+preference file: /dev/null/dispatch-prefer
+no preference declared; every kind resolves exactly as it does with no preference
+/bin/bash: /dev/null/.bashrc: Not a directory
+
