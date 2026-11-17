@@ -23,7 +23,7 @@ The [worker helper](../../../bin/fm-quota-choose.sh) and [typed resolver](../../
 
 The canonical shell helper for a worker that has already performed its model-selection reasoning and now needs to pick the first viable candidate is `bin/fm-quota-choose.sh`.
 Pass it the intake's already-captured default TOON or permitted JSON fallback through stdin or `--snapshot`; it never takes another quota snapshot, so it selects from the same quota state as the intake.
-Pass each candidate as `harness:model`, with earlier candidates preferred.
+Pass each candidate as `harness:model`; the helper's header owns ordering, including its optional work-kind preference.
 The helper's header owns its provider mapping and quota selection mechanics.
 An `exhausted_now` runway vetoes the candidate.
 The helper selects a candidate only when its applicable quota has a known `effectivePercentRemaining` greater than zero.
@@ -114,9 +114,32 @@ A high `spendPriority` on a nearly empty window that will exhaust soon must not 
 Unknown or unmeasurable runway stays eligible with disclosed uncertainty and is never assumed to pass.
 Do not invent a generic percentage floor, and honor an explicit captain floor for a candidate when one exists.
 
+## Worker-runtime preference, before the ranking
+
+Read `$FM_HOME/config/dispatch-prefer` at each intake that resolves a matched rule.
+It carries one `kind=harness` line per kind of work; `docs/configuration.md` "Worker runtime preference" owns the operator contract and `bin/fm-prefer-lib.sh` owns the format.
+A preference applies only when the MATCHED RULE declares that same `kind` in `config/crew-dispatch.json`.
+Never infer a rule's kind from its `when` text; a rule with no declared `kind` is unclassified, and profiles taken from the top-level `default` set carry no rule and so no kind.
+
+When it applies, the preference REORDERS this rule's candidates so the preferred runtime comes first, after the three gates above and before `spendPriority` ranks anything.
+Reorder only among the candidates that already passed all three gates and carry a comparable known `spendPriority`, so an exhausted, ineligible, or unmeasured preferred runtime is never forced into the work.
+Rank the preferred runtime's surviving candidates among themselves by `spendPriority` and keep the genuine-tie rule.
+
+The preference adds no candidate the rule does not list, overrides no explicit per-task override, and relaxes nothing above.
+Report its outcome in the candidate accounting, in one of three shapes:
+
+- Applied, naming the kind and runtime.
+  Add a warning when that runtime's own row is `projected_exhaustion` or its `spendPriority` is negative, so a deliberate choice onto a nearly spent window is visible rather than a mid-task stall.
+  Use quota-axi's own labels and invent no percentage floor.
+- Not usable, naming the gate or uncertainty that removed it, then rank the remaining candidates normally.
+- A no-op, when the matched rule lists no candidate on that runtime.
+  Say so rather than dropping it silently.
+
+The [worker helper's header](../../../bin/fm-quota-choose.sh) and [typed resolver](../../../docs/configuration.md#typed-dispatch-resolution-env-typesafe_api_key) own their respective preference application and reporting.
+
 ## Rank by spendPriority
 
-Among candidates that pass all three gates, pick the highest known `spendPriority`.
+Within the ranking pool established by "Worker-runtime preference, before the ranking" above, pick the highest known `spendPriority`.
 A higher known scalar is better: positive means paid allowance is on track to reach reset unused, `0` is exact utilization, and negative means overdrawn against the reset clock.
 Rank only from comparable known scalars.
 Never treat absent, `unknown`, or unmeasurable `spendPriority` as zero or as healthy; `0` means exact utilization, a different claim from unknown.

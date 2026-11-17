@@ -1927,6 +1927,7 @@ This section is the single owner of the canonical schema and its per-field seman
   "rules": [
     {
       "when": "<natural-language condition describing a kind of task>",
+      "kind": "<the kind of work this rule is, for config/dispatch-prefer>",
       "approval": "captain",
       "min_confidence": 0.85,
       "path_force": "deployment-config",
@@ -1952,6 +1953,16 @@ This section is the single owner of the canonical schema and its per-field seman
 | `use` and optional top-level `default` | Accept one profile object or a non-empty array of profile objects; the single-object form remains fully backward-compatible. |
 | Profile `harness` | Required in every profile. |
 | Profile `model` and `effort`; rule `why` | Optional. |
+| Rule `kind` | Optional; a rule without it is unclassified, so no [worker runtime preference](#worker-runtime-preference-configdispatch-prefer) applies to it. |
+
+**Rule kinds**
+
+`kind` declares what kind of work a rule is, so [`config/dispatch-prefer`](#worker-runtime-preference-configdispatch-prefer) can name a preferred runtime for that kind.
+It is a deliberate classification you write on the rule, never inferred: nothing reads a rule's `when` text to decide its kind, because a rule's matching condition is written for the classifier and would make the kind drift with every reword.
+A kind is a token matching `^[a-z0-9]+(-[a-z0-9]+)*\z`, and the vocabulary is open so a fleet can name the kinds it actually routes.
+The kinds this fleet starts from are `implementation` for work that changes code, `investigation` for work whose deliverable is a written report, `mechanical` for rote edits with a known shape, `deployment` for work that reaches staging or production, and `contract` for work that changes binding agent-contract prose.
+Several rules may declare the same kind, and one preference then reaches all of them.
+A file that declares no kinds behaves exactly as it did before kinds existed.
 
 **Fields applied only by typed resolution**
 
@@ -2020,6 +2031,71 @@ See [`docs/examples/crew-dispatch.json`](examples/crew-dispatch.json) for a star
 
 Secondmate homes inherit this file from the primary, so a secondmate's own crewmates apply the same dispatch profile behavior.
 
+## Worker runtime preference (config/dispatch-prefer)
+
+Which runtime is the right one for a kind of work depends on how much quota is left, and that changes day to day.
+`config/dispatch-prefer` is the local, gitignored file that says so in one short phrase, and [`bin/fm-prefer.sh`](../bin/fm-prefer.sh) writes it.
+
+```sh
+bin/fm-prefer.sh set implementation codex    # prefer codex for implementation
+bin/fm-prefer.sh set implementation grok     # prefer grok for implementation
+bin/fm-prefer.sh set implementation auto     # no preference for implementation
+bin/fm-prefer.sh show                        # what is preferred, and what it reaches
+bin/fm-prefer.sh clear                       # no preference for any kind
+```
+
+This section is the single owner of the operator contract.
+[`bin/fm-prefer-lib.sh`](../bin/fm-prefer-lib.sh) owns the file format, each consuming script's header owns how that consumer applies it, and "Crew dispatch profiles" above owns the rule `kind` a preference is matched to.
+
+**What a preference does, and what it never does**
+
+A preference REORDERS the candidates of the already-matched crew-dispatch rule so the preferred runtime comes first.
+That is its entire effect.
+
+- It never adds a candidate the rule does not already list.
+- It never overrides an explicit per-task override, which still wins.
+- It never relaxes a gate: eligibility, authentication facts, the quota and runway gates owned by [`quota-array-dispatch`](../.agents/skills/quota-array-dispatch/SKILL.md), the malformed-configuration refusal, and the strongest-reasoning-class rule all decide exactly what they decided before.
+- It therefore reorders only among candidates that already passed every gate and can be ranked, so an exhausted, ineligible, or unmeasured preferred runtime cannot be forced into the work.
+
+When the preferred runtime is not usable, the next candidate takes the work by the ordinary `spendPriority` ranking and the selection states plainly that the preference was not usable and why.
+A preference naming a runtime the matched rule does not list is a no-op for that rule and says so rather than passing silently; `bin/fm-prefer.sh set` and `show` report that same no-op at the moment you write it, before any task meets it.
+
+**File example**
+
+The [`fm-prefer-lib.sh` header](../bin/fm-prefer-lib.sh) owns the accepted syntax and validation rules.
+
+```text
+# which runtime is preferred, by kind of work
+implementation=codex
+investigation=grok
+```
+
+A malformed file is an actionable configuration error: `set`, `show`, and consumers that read the preference refuse with a diagnostic rather than dropping it and routing anyway.
+`clear` can remove a malformed file.
+
+**Which paths honor it**
+
+- [Typed dispatch resolution](#typed-dispatch-resolution-env-typesafe_api_key) applies it in code, reports it on a `preference:` line, and carries it through the sensitive-path free-model denial.
+- Firstmate's own intake applies it as the first step of [`quota-array-dispatch`](../.agents/skills/quota-array-dispatch/SKILL.md)'s ranking, so it works with or without the typed resolver's key.
+- [`bin/fm-quota-choose.sh`](../bin/fm-quota-choose.sh) applies it to a worker's own candidate list when the caller passes `--kind <kind>`.
+- Profiles taken from the top-level `default` set carry no rule and so no kind, and a `--codex-alternative` relaunch offer already fixes the runtime it ranks; both keep today's ranking exactly.
+
+**Nearly spent and unmeasured runtimes**
+
+Preferring a runtime whose own window is projected to exhaust, or whose `spendPriority` is overdrawn against its reset clock, is allowed and warned about, so the call stays the operator's and does not become a silent mid-task stall.
+Both conditions come from quota-axi's own published labels; there is no invented percentage floor.
+A preferred runtime whose quota cannot be measured at all is reported as unusable with that reason, and the remaining candidates are ranked as usual.
+An honest unknown is the outcome there, never a guessed number: a Codex lane authenticated by a metered API key is one such surface, because quota-axi reports it as `auth_required` rather than as measured headroom.
+
+**One command, every home**
+
+`config/dispatch-prefer` is declared inheritable in [`bin/fm-config-inherit-lib.sh`](../bin/fm-config-inherit-lib.sh), so every convergence point carries it: a secondmate spawn, the bootstrap secondmate sweep, the mid-session config push, and the remote inherited-material route.
+`bin/fm-prefer.sh set` and `clear` run that convergence themselves through `bin/fm-config-push.sh`, so one call leaves this machine and each live local and remote secondmate home correct.
+A failed convergence never undoes this home's change: the command exits non-zero, reports that at least one home did not take the local preference, and names `bin/fm-config-push.sh` to run once that host is reachable.
+`bin/fm-config-push.sh` owns the per-home convergence report.
+A host that is not a registered secondmate route of this home receives nothing, because there is no supported route to it; register it under [Secondmate routes](#secondmate-routes-datasecondmatesmd) first.
+Read a remote home's preference back with `bin/fm-on.sh <secondmate-id> fm-prefer.sh show`; `telos64` can replace the id when that SSH alias selects exactly one registered route.
+
 ## Typed dispatch resolution (.env TYPESAFE_API_KEY)
 
 `bin/fm-dispatch-resolve.sh` resolves one concrete crewmate or scout profile from a written brief with typesafe.ai's System One model (Jev), so the rule match that firstmate otherwise reasons out in its own context becomes one short tool turn.
@@ -2046,7 +2122,7 @@ Those declared paths are the only paths the resolver reads: it never scans a bri
 When one declared path matches the resolver's deployment-configuration list - `vercel.json`, `*.tf` and `*.tfvars`, CloudFormation templates (including `template.yaml`, `template.yml`, and `*.template`, `*.template.json`, and `*.template.yaml`), Kubernetes, ArgoCD (under an `argocd/`, `argo-cd/`, or `argo/` directory), ingress, and Helm manifests, deploy scripts (`scripts/deploy*`, `*deploy*.sh`, `*deploy*.ps1`), and deploy, release, or publish workflows under `.github/workflows/`, as [`bin/fm-dispatch-resolve.sh`](../bin/fm-dispatch-resolve.sh) enumerates them in one place - the rule declaring `path_force` is selected in code with no request to Jev.
 A match forces the declared rule because that is the safe direction, so the list carries no exclusions and a path under `tests/` that names a deploy script still forces; a documentation page or a UI `charts/` component that merely reads like deployment work does not match and changes nothing.
 A forced result replaces the model, confidence, and probability lines with `decided_by: path-forced`, the forced rule and its `when` excerpt, and `forced_path`/`forced_pattern`, so a forced route is never mistaken for a classified one; a result without a `decided_by:` line was decided by the model.
-Everything after the rule choice is identical: the rule's `approval` and `floor`, each candidate's `provider` and `floor`, the same `quota-axi` snapshot, and the same `spendPriority` argmax.
+Everything after the rule choice uses the same checks and ranking described below under "Checks performed after the answer".
 Without a rule declaring `path_force` this check is inert, whatever paths a brief declares.
 A brief with no `Target paths:` line, no matching path, or a home whose rules declare no `path_force` leaves the Jev request and its output unchanged, so only some briefs carry this fact and the rest route exactly as before.
 After that classification, a declared target path in a sensitive class cannot resolve to a free OpenCode model.
@@ -2122,7 +2198,7 @@ After the answer, code applies all remaining checks and ranking:
 - The confidence floor and the matched rule's `approval` and `floor`.
 - Each candidate's `provider` and `floor`.
 - Every applicable account-wide and model/product row from one `quota-axi --json` snapshot.
-- The numeric `spendPriority` argmax over candidates, using each candidate's limiting row.
+- Ranking from each candidate's limiting row, subject to the [worker runtime preference](#worker-runtime-preference-configdispatch-prefer) contract above.
 - The [Claude seat dispatch gate](claude-seats.md#switching-automatically), using a separate bounded read of the active seat rather than the ambient Claude ranking row.
   A held Claude candidate is ineligible, and configured alternatives such as Codex remain subject to the existing quota and approval gates.
   A matched rule offers only its own candidates, so a Claude-only rule stays held; a below-floor rule still falls through to the default, whose Claude profiles are held the same way.

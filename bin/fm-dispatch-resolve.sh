@@ -34,6 +34,17 @@
 # Free OpenCode deny, after classification: bin/fm-free-model-sensitivity.sh
 #   owns the sensitive-path classes and drops a free OpenCode candidate when
 #   a declared target path matches one. Paid models and other harnesses stay.
+# Worker-runtime preference, at ranking time: when the applied rule declares a
+#   `kind` and $FM_HOME/config/dispatch-prefer prefers a harness for that kind,
+#   the preference REORDERS that rule's candidates so the preferred runtime
+#   comes first. It adds no candidate, relaxes no gate, and ranks only inside
+#   the candidates that already passed every gate and are rankable, so an
+#   exhausted, ineligible, or unmeasured preferred runtime is reported and the
+#   remaining candidates are ranked by spendPriority exactly as before. A
+#   preference for a harness the applied rule does not list is a no-op that
+#   says so. Profiles taken from `default`, and --codex-alternative, carry no
+#   rule kind and so take no preference. bin/fm-prefer-lib.sh owns the file
+#   format and bin/fm-prefer.sh owns writing it.
 #
 # What it does when on with at least one rule: one POST to
 #   https://api.typesafe.ai/v1/systemone with the project name and the brief's
@@ -92,6 +103,10 @@
 #     JSON only: applied_rule, the rule id (or "default") the profiles came
 #       from, which differs from rule after a fallback or floor fall-through
 #     reason: <why the status is not clear>
+#     preference: <kind>=<harness> applied | no-op: <why> | not usable: <why>
+#       (only when the applied rule's kind carries a preference), with a
+#       warning: suffix whenever the preferred runtime's own quota evidence is
+#       projected to exhaust or is overdrawn against its reset clock
 #     candidate: <harness>:<model> provider=.. scope=.. remaining=..% spendPriority=.. runway=.. -> eligible | eligible, unranked: <reason> | not eligible: <reason>
 #     profile: --harness <h> [--model <m>] [--effort <e>]     (status clear only)
 #   clear     -> pass the profile line to fm-spawn.sh unless you state a reason to override
@@ -134,6 +149,8 @@ CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
 # shellcheck source=bin/fm-seat-lib.sh
 . "$SCRIPT_DIR/fm-seat-lib.sh"
+# shellcheck source=bin/fm-prefer-lib.sh
+. "$SCRIPT_DIR/fm-prefer-lib.sh"
 
 # shellcheck source=bin/fm-dispatch-predict-lib.sh
 . "$SCRIPT_DIR/fm-dispatch-predict-lib.sh"
@@ -199,9 +216,11 @@ VERIFIED_HARNESSES=$(fm_control_harnesses | jq -Rsc 'split("\n") | map(select(le
 
 # The fields this tool consumes must be well formed; bootstrap owns the wider
 # schema diagnostic, but an intake never selects around a malformed file.
-rules_err=$(jq -r --argjson verified_harnesses "$VERIFIED_HARNESSES" --arg provider_re "$FM_QUOTA_PROVIDER_ID_RE" '
+rules_err=$(jq -r --argjson verified_harnesses "$VERIFIED_HARNESSES" --arg provider_re "$FM_QUOTA_PROVIDER_ID_RE" \
+  --arg kind_re "$FM_PREFER_TOKEN_RE_JQ" '
   def verified($h): $verified_harnesses | index($h);
   def provider_id($p): ($p | type) == "string" and ($p | test($provider_re));
+  def kind_ok($k): ($k | type) == "string" and ($k | test($kind_re));
   def effort_ok($h; $m; $e):
     if $e == null then true
     elif ($e | type) != "string" then false
@@ -242,6 +261,8 @@ rules_err=$(jq -r --argjson verified_harnesses "$VERIFIED_HARNESSES" --arg provi
   elif any((.rules // [])[]; has("select") and ((.select | type) != "string" or (.select | length) == 0)) then "select must be a non-empty string"
   elif any((.rules // [])[]; has("select") and .select != "quota-balanced") then
     "unknown select: " + ([.rules[] | select(has("select") and .select != "quota-balanced") | .select] | unique | join(", "))
+  elif any((.rules // [])[]; has("kind") and (kind_ok(.kind) | not)) then
+    "kind must be a token matching " + $kind_re + " when present"
   elif any((.rules // [])[]; has("path_force") and .path_force != "deployment-config") then
     "path_force must be \"deployment-config\" when present"
   elif ([(.rules // [])[] | select(.path_force == "deployment-config")] | length) > 1 then "at most one rule may declare path_force"
@@ -290,6 +311,13 @@ done < <(jq -r '
   | map(.harness) | unique | .[]' "$RULES")
 
 RULE_COUNT=$(jq -r '(.rules // []) | length' "$RULES")
+
+# The preference is configuration like the rules file: a malformed one is an
+# actionable error, never a preference quietly dropped from the selection.
+PREFER=$(fm_prefer_json "$CONFIG") || die "malformed preference file: $PREFER"
+# A relaunch offer already fixes the harness it ranks, so a preference for
+# another runtime has nothing to reorder there and is deliberately not applied.
+[ "$CODEX_ALTERNATIVE" = false ] || PREFER='{}'
 
 emit_error() {
   local reason=$1
@@ -513,9 +541,17 @@ if jq -e '.. | objects | select(.harness? == "claude")' "$RULES" >/dev/null; the
   esac
 fi
 
+SENSITIVITY_INPUT=$(jq -c '
+  def profiles($v): if ($v | type) == "array" then $v elif ($v | type) == "object" then [$v] else [] end;
+  {candidates: ([((.rules // [])[]) | profiles(.use)[]] + profiles(.default // null) | map({profile: .}))}
+' "$RULES") || emit_error "free-model sensitivity input failed"
+SENSITIVITY=$(printf '%s\n' "$SENSITIVITY_INPUT" | "$SCRIPT_DIR/fm-free-model-sensitivity.sh" apply-resolution --brief "$BRIEF") ||
+  emit_error "free-model sensitivity check failed"
+
 # ---- resolution: declared gates + quota evidence + argmax, all in jq ------------
 RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg none_criterion "$DEFAULT_WHEN" --argjson pmap "$PMAP" \
   --argjson provenance "$PROVENANCE" --argjson forced "$FORCED" --arg seat_hold "$SEAT_HOLD" --argjson codex_alternative "$CODEX_ALTERNATIVE" \
+  --argjson prefer "$PREFER" --argjson sensitivity "$SENSITIVITY" \
   --slurpfile resp "$RESP_FILE" --slurpfile rules "$RULES" --slurpfile quota "$QUOTA" "$FM_QUOTA_ROW_JQ"'
   ($resp[0]) as $r | ($rules[0]) as $cfg | ($quota[0]) as $q | ($r.answers.rule) as $a |
   def profiles($v): if ($v | type) == "array" then $v elif ($v | type) == "object" then [$v] else [] end;
@@ -545,7 +581,9 @@ RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg non
     $rows | map({scope, status, pct: (.effectivePercentRemaining // null), runway: (.runway.status // null), spendPriority: (.selection.spendPriority // null)});
   def evaluate($c):
     (provider_of($c)) as $p | (lane_of($c)) as $lane |
-    if $c.harness == "claude" and $seat_hold != "" then
+    if any($sensitivity.candidates[]; .profile == $c and .eligible == false) then
+      {profile: $c, provider: $p, eligible: false, reason: "sensitive target path denies a free OpenCode model"}
+    elif $c.harness == "claude" and $seat_hold != "" then
       {profile: $c, provider: $p, eligible: false, reason: ("Claude seat dispatch held: " + $seat_hold)}
     elif $p == null then {profile: $c, eligible: false, reason: "no provider family for harness \($c.harness); declare provider on the profile"}
     elif prov($p; $lane) == null then
@@ -675,24 +713,49 @@ RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg non
     ($sel.use | map(evaluate(.))) as $cands |
     ([$cands[] | select(.eligible and ((.unranked // false) | not) and ($codex_alternative == false or .profile.harness == "codex"))]) as $elig |
     ([$cands[] | select(.unranked)]) as $unranked |
+    # The preference reorders the APPLIED rule'"'"'s own candidates. Profiles taken
+    # from the default set carry no rule and so no kind, and a rule with no
+    # declared kind is unclassified, so both keep today'"'"'s ranking exactly.
+    (rule_at($applied_rule) | if . == null then null else .kind end) as $applied_kind |
+    (if $applied_kind == null then null else $prefer[$applied_kind] end) as $preferred |
+    # Ranking only inside $elig is what keeps every gate in force: a preferred
+    # runtime that is exhausted, ineligible, or unmeasured is simply not here.
+    ([$elig[] | select(.profile.harness == $preferred)]) as $pref_elig |
+    ([$cands[] | select(.profile.harness == $preferred)]) as $pref_listed |
+    (if $preferred == null then null
+     elif ($pref_elig | length) > 0 then {kind: $applied_kind, harness: $preferred, state: "applied"}
+     elif ($pref_listed | length) == 0 then
+       {kind: $applied_kind, harness: $preferred, state: "no-op",
+        reason: "\($applied_rule) lists no \($preferred) candidate"}
+     else
+       {kind: $applied_kind, harness: $preferred, state: "not-usable",
+        reason: ([$pref_listed[] | .reason] | join("; "))}
+     end) as $pref |
+    (if ($pref.state // "") == "applied" then $pref_elig else $elig end) as $rank |
     if ($elig | length) == 0 then $ev + {status: "escalate", reason: "no rankable eligible candidate", note: $sel.note, candidates: $cands}
+      + (if $pref == null then {} else {preference: $pref} end)
     else
-      ($elig | max_by(.spendPriority)) as $best |
-      ([$elig[] | select(.spendPriority == $best.spendPriority)] | length) as $ties |
-      if $ties > 1 then $ev + {status: "escalate", reason: "genuine spendPriority tie", note: $sel.note, candidates: $cands}
-      else $ev + {status: "clear", note: $sel.note, candidates: $cands, chosen: $best}
+      ($rank | max_by(.spendPriority)) as $best |
+      ([$rank[] | select(.spendPriority == $best.spendPriority)] | length) as $ties |
+      # A nearly-spent preferred runtime still wins the reorder, because the
+      # preference is the operator'"'"'s own call; the warning makes that choice
+      # visible instead of letting it become a mid-task stall. Both conditions
+      # are quota-axi'"'"'s own published labels, never an invented percentage.
+      (if ($pref.state // "") == "applied" then
+         [(if ($best.runway // "") == "projected_exhaustion" then "runway projected_exhaustion at \($best.scope)" else empty end),
+          (if ($best.spendPriority | type) == "number" and $best.spendPriority < 0 then "spendPriority \($best.spendPriority) is overdrawn against the reset clock" else empty end)]
+       else [] end) as $pref_warn |
+      (if $pref == null then {}
+       elif ($pref_warn | length) > 0 then {preference: ($pref + {warn: $pref_warn})}
+       else {preference: $pref} end) as $pref_field |
+      if $ties > 1 then $ev + {status: "escalate", reason: "genuine spendPriority tie", note: $sel.note, candidates: $cands} + $pref_field
+      else $ev + {status: "clear", note: $sel.note, candidates: $cands, chosen: $best} + $pref_field
         + (if ($unranked | length) > 0 then
              {unranked_note: "\($unranked | length) eligible candidate(s) unranked (\([$unranked[].provider] | unique | join(", ")))"}
            else {} end)
       end
     end
   end') || emit_error "resolution failed"
-
-# The classifier has already chosen. A sensitive target path still cannot
-# keep a free OpenCode model, whatever that choice was.
-if ! RESULT=$(printf '%s\n' "$RESULT" | "$SCRIPT_DIR/fm-free-model-sensitivity.sh" apply-resolution --brief "$BRIEF"); then
-  emit_error "free-model sensitivity check failed"
-fi
 
 if [ "$JSON_OUTPUT" = 1 ]; then
   printf '%s\n' "$RESULT"
@@ -718,6 +781,11 @@ TEXT=$(jq -r '
   (if .auto_apply then "  auto_apply: true" else empty end),
   (if .auto_apply_skipped then "  auto_apply_skipped: \(.auto_apply_skipped | flat)" else empty end),
   (if .reason then "  reason: \(.reason | flat)" else empty end),
+  (if .preference then "  preference: \(.preference.kind | flat)=\(.preference.harness | flat) "
+      + (if .preference.state == "applied" then "applied"
+         else "\(.preference.state | flat): \(.preference.reason | flat); ranked the remaining candidates by spendPriority" end)
+      + (if (.preference.warn // [] | length) > 0 then "  warning: " + (.preference.warn | join("; ") | flat) else "" end)
+   else empty end),
   (if .note then "  note: \(.note | flat)" else empty end),
   (if .unranked_note then "  note: \(.unranked_note | flat)" else empty end),
   (.candidates[]? | "  candidate: \(.profile.harness | flat):\(show(.profile.model))"

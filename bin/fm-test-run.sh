@@ -515,6 +515,7 @@ family_for_basename() {
     fm-pending-reply.test.sh|fm-pi-branch-extension.test.sh|\
     fm-procevent-quota.test.sh|fm-procevent-when.test.sh|fm-procevent.test.sh|\
     fm-live-gate.test.sh|\
+    fm-prefer.test.sh|\
     fm-project-origin.test.sh|fm-public-followup.test.sh|fm-quota-choose.test.sh|\
     fm-remote-entrypoint.test.sh|fm-remote-secondmate-parent-binding.test.sh|\
     fm-send-remote-delivery.test.sh|fm-spawn-pool-base-freshen.test.sh|\
@@ -929,6 +930,7 @@ tests/fm-pr-state-live-e2e.test.sh 151
 tests/fm-pr-state.test.sh 1883
 tests/fm-procevent-quota.test.sh 19757
 tests/fm-procevent-when.test.sh 28123
+tests/fm-prefer.test.sh 758
 tests/fm-procevent.test.sh 309117
 tests/fm-project-capacity.test.sh 102120
 tests/fm-project-mode.test.sh 476
@@ -1888,6 +1890,17 @@ families_for_changed_path() {
       ;;
     bin/fm-quota-choose.sh)
       printf '%s\n' "__script__:fm-quota-choose.test.sh"
+      ;;
+    bin/fm-prefer.sh)
+      printf '%s\n' "__script__:fm-prefer.test.sh"
+      ;;
+    bin/fm-prefer-lib.sh)
+      # The one owner of config/dispatch-prefer's format, read by the tool, the
+      # typed resolver, and the worker-side quota helper.
+      printf '%s\n' "__script__:fm-prefer.test.sh"
+      printf '%s\n' "__script__:fm-dispatch-resolve.test.sh"
+      printf '%s\n' "__script__:fm-quota-choose.test.sh"
+      printf '%s\n' session-bootstrap
       ;;
     bin/fm-dispatch-resolve.sh)
       printf '%s\n' "__script__:fm-dispatch-resolve.test.sh"

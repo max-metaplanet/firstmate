@@ -2,7 +2,14 @@
 # Choose the first quota-eligible candidate from a ranked list.
 #
 # Usage:
-#   fm-quota-choose.sh [--snapshot <path>] [--candidate <harness:model>]...
+#   fm-quota-choose.sh [--snapshot <path>] [--kind <kind>] [--candidate <harness:model>]...
+#
+# --kind names the kind of work, so the home's worker-runtime preference for
+# that kind (config/dispatch-prefer, owned by bin/fm-prefer-lib.sh) moves the
+# preferred harness's candidates to the front before the walk below. It only
+# reorders the candidates the caller supplied; it never adds one, never relaxes
+# the eligibility test, and reports a preference that names no supplied
+# candidate on stderr instead of passing silently.
 #
 # Reads one already-captured quota-axi default TOON or JSON snapshot from the
 # provided file, or from stdin when --snapshot is omitted.
@@ -55,6 +62,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/fm-quota-axi-lib.sh"
 # shellcheck source=bin/fm-control-lib.sh
 . "$SCRIPT_DIR/fm-control-lib.sh"
+# shellcheck source=bin/fm-prefer-lib.sh
+. "$SCRIPT_DIR/fm-prefer-lib.sh"
+
+PREFER_CONFIG="${FM_CONFIG_OVERRIDE:-${FM_HOME:-${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}}/config}"
 
 die() { printf 'error: %s\n' "$1" >&2; exit 2; }
 usage() {
@@ -68,12 +79,18 @@ usage() {
 
 CANDIDATES=()
 SNAPSHOT_SOURCE=
+KIND=
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --snapshot)
       [ -n "${2-}" ] || die "--snapshot needs a path"
       SNAPSHOT_SOURCE=$2
+      shift 2
+      ;;
+    --kind)
+      [ -n "${2-}" ] || die "--kind needs a value"
+      KIND=$2
       shift 2
       ;;
     --candidate)
@@ -103,6 +120,35 @@ for c in "${CANDIDATES[@]}"; do
     ''|:*|*[!A-Za-z0-9._/:-]*) die "invalid candidate: $c" ;;
   esac
 done
+
+# --kind applies the home's worker-runtime preference for that kind of work by
+# moving the preferred harness's candidates to the front, keeping every other
+# candidate's relative order. It only reorders: it adds no candidate, and the
+# eligibility walk below is unchanged, so an exhausted preferred runtime still
+# loses to the next eligible one. A preference the candidate list does not name
+# says so on stderr rather than passing silently.
+if [ -n "$KIND" ]; then
+  fm_prefer_token_valid "$KIND" || die "invalid kind: $KIND (expected $FM_PREFER_TOKEN_RE)"
+  preferred=$(fm_prefer_for_kind "$PREFER_CONFIG" "$KIND") ||
+    die "malformed preference file: $preferred"
+  if [ -z "$preferred" ]; then
+    printf 'quota-choose: no preference declared for kind %s\n' "$KIND" >&2
+  else
+    first=() rest=()
+    for c in "${CANDIDATES[@]}"; do
+      case "$c" in
+        "$preferred"|"$preferred":*) first+=("$c") ;;
+        *) rest+=("$c") ;;
+      esac
+    done
+    if [ "${#first[@]}" -eq 0 ]; then
+      printf 'quota-choose: preference %s=%s names no supplied candidate: no-op\n' "$KIND" "$preferred" >&2
+    else
+      CANDIDATES=("${first[@]}" ${rest[@]+"${rest[@]}"})
+      printf 'quota-choose: preference %s=%s moved %s candidate(s) first\n' "$KIND" "$preferred" "${#first[@]}" >&2
+    fi
+  fi
+fi
 
 if [ -n "$SNAPSHOT_SOURCE" ]; then
   [ -f "$SNAPSHOT_SOURCE" ] && [ ! -L "$SNAPSHOT_SOURCE" ] || die "snapshot is not a regular file: $SNAPSHOT_SOURCE"

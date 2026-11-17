@@ -185,6 +185,8 @@ DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 . "$SCRIPT_DIR/fm-control-lib.sh"
 # shellcheck source=bin/fm-env-lib.sh disable=SC1091
 . "$SCRIPT_DIR/fm-env-lib.sh"
+# shellcheck source=bin/fm-prefer-lib.sh disable=SC1091
+. "$SCRIPT_DIR/fm-prefer-lib.sh"
 # shellcheck source=bin/fm-tangle-lib.sh disable=SC1091
 . "$SCRIPT_DIR/fm-tangle-lib.sh"
 # shellcheck source=bin/fm-ff-lib.sh disable=SC1091
@@ -1118,7 +1120,8 @@ crew_dispatch_validate() {
   else
     verified_harnesses='["claude","codex","opencode","pi","pi-signed","grok","kimi","cursor","agy","muse","rovo","omp","devin","commandcode","polytoken"]'
   fi
-  err=$(jq -r --argjson typed "$typed_active" --argjson verified_harnesses "$verified_harnesses" --arg provider_re "$FM_QUOTA_PROVIDER_ID_RE" '
+  err=$(jq -r --argjson typed "$typed_active" --argjson verified_harnesses "$verified_harnesses" --arg provider_re "$FM_QUOTA_PROVIDER_ID_RE" \
+    --arg kind_re "$FM_PREFER_TOKEN_RE_JQ" '
     def verified($h): $verified_harnesses | index($h);
     def provider_id($p): ($p | type) == "string" and ($p | test($provider_re));
     def effort_ok($h; $m; $e):
@@ -1187,6 +1190,8 @@ crew_dispatch_validate() {
     elif [(.rules // [])[]? | select(has("select") and ((.select? | type) != "string" or (.select | length) == 0))] | length > 0 then "select must be a non-empty string"
     elif [(.rules // [])[]? | .select? // empty | select(. != "quota-balanced")] | length > 0 then
       "unknown select: " + ([ (.rules // [])[]? | .select? // empty | select(. != "quota-balanced") ] | unique | join(", "))
+    elif [(.rules // [])[]? | select(has("kind") and (((.kind | type) == "string" and (.kind | test($kind_re))) | not))] | length > 0 then
+      "kind must be a token matching " + $kind_re + " when present"
     elif $typed and ([(.rules // [])[]? | select(has("path_force") and .path_force != "deployment-config")] | length > 0) then "path_force must be \"deployment-config\" when present"
     elif $typed and ([(.rules // [])[]? | select(.path_force? == "deployment-config")] | length > 1) then "at most one rule may declare path_force"
     elif has("default") and ((.default | type) != "object" and (.default | type) != "array") then "default must be a profile object or non-empty profile array"

@@ -1921,7 +1921,7 @@ test_config_push_reports_skips_dirty_and_invalid_home() {
   err="$w/config-push-warnings.err"
   out=$(run_config_push "$w" 2>"$err"); status=$?
 
-  expect_code 0 "$status" "warnings-only config push should exit zero"
+  expect_code 1 "$status" "an unsafe home leaves preference convergence incomplete"
   assert_contains "$out" "secondmate dirty ($dirty_real):" \
     "config push did not report dirty home"
   assert_contains "$out" "home: dirty working tree - local-material push continuing" \
@@ -1935,7 +1935,7 @@ test_config_push_reports_skips_dirty_and_invalid_home() {
   err_text=$(cat "$err")
   assert_contains "$err_text" "fm-config-inherit: warning: skipped crew-dispatch.json" \
     "config push did not inherit the lib's skip stderr warning"
-  pass "B13 config-push reports dirty, non-allowing, and invalid homes without failing warnings-only runs"
+  pass "B13 config-push preserves skip reports and fails for an unsafe home"
 }
 
 test_config_push_exits_nonzero_on_copy_error() {
