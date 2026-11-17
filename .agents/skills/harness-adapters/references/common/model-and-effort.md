@@ -30,7 +30,7 @@ Harness identity is independent of model provider.
 `harness=cursor` with `model=cursor-grok-4.5-*` is Cursor routing a Grok model, not `harness=grok`.
 
 No script resolves credential provenance for you.
-Establish it from the tool's discovery surface and `quota-axi auth --json` per-provider sources, and show the reasoning rather than inferring it from a name.
+Establish it from the tool's discovery surface and the per-provider sources collected under [quota-array-dispatch's evidence procedure](../../../quota-array-dispatch/SKILL.md#read-the-default-toon), and show the reasoning rather than inferring it from a name.
 
 ## Discovery
 
