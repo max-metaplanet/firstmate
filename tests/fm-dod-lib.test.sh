@@ -943,6 +943,32 @@ test_no_mistakes_dod_sends_the_worker_into_the_pipeline_itself() {
 }
 test_no_mistakes_dod_sends_the_worker_into_the_pipeline_itself
 
+# This fleet turned the pipeline's document step off on 2026-11-17, after it
+# re-added comments to a CI workflow file twice against explicit instructions.
+# The no-mistakes contract must say so, so a worker neither names `document` in
+# a skip flag of its own nor tries to revive the step, and the Gerrit skip
+# instruction must survive that wording unchanged.
+test_no_mistakes_dod_states_the_document_step_is_off() {
+  local forge out
+  for forge in none gerrit; do
+    out="$TMP_ROOT/dod-doc-$forge.md"
+    fm_dod_block no-mistakes dod-doc-task fm/dod-doc-task "$forge" > "$out"
+    # shellcheck disable=SC2016  # the backticked step name must stay literal
+    assert_grep 'This fleet currently runs the pipeline with its `document` step turned off, so a run that documents nothing is the expected shape here rather than a misconfiguration.' "$out" \
+      "$forge: DoD did not state that the document step is currently off"
+    # shellcheck disable=SC2016  # the backticked step name must stay literal
+    assert_grep "The pipeline's own configuration drops that step: never name \`document\` in a skip flag of your own, never try to turn the step back on, and never report its absence as a finding." "$out" \
+      "$forge: DoD did not tell the worker to leave the document step alone"
+  done
+  # shellcheck disable=SC2016  # the Gerrit skip instruction must stay literal
+  assert_grep 'Pass `--skip push,pr,ci` on every `no-mistakes axi run` for this task, and skip nothing else: `review`, `test`, `document`, and `lint` are the whole point of the run.' "$TMP_ROOT/dod-doc-gerrit.md" \
+    "the Gerrit skip instruction is no longer byte-for-byte what it was"
+  assert_no_grep 'push,pr,ci,document' "$TMP_ROOT/dod-doc-gerrit.md" \
+    "the Gerrit skip instruction grew the document step"
+  pass "the no-mistakes DoD states the document step is off and leaves the Gerrit skip text alone"
+}
+test_no_mistakes_dod_states_the_document_step_is_off
+
 # The launch role is the generated text a worker receives. It must keep the
 # skill name, so a session that registers the skill loads it by name, and must
 # name the skill file as the fallback for a session where the name does not
