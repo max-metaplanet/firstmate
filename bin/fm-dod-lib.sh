@@ -592,6 +592,11 @@ EOF
 # the pipeline, what `--intent` may carry, and the two firstmate-specific rules.
 # Written once; only the two sentences about a green PR depend on the forge,
 # because on gerrit the ci step is skipped and there is no PR to report.
+# The document-step sentences state this fleet's standing posture as of
+# 2026-11-17 - the pipeline runs with its document step off - so a worker neither
+# adds the step to a skip flag of its own nor argues with its absence. They are a
+# posture statement, not a computed fact: nothing here reads the pipeline's
+# configuration, and reversing the posture means rewriting these two sentences.
 fm_nm_driving_block() {  # <forge>
   local pr_return_line='' pr_reattach_clause=';' drive_block wait_cfg
   if [ "$1" != gerrit ]; then
@@ -618,6 +623,8 @@ ${pr_return_line}Whenever a drive call returns without a gate or an outcome - it
   cat <<EOF
 You drive no-mistakes by responding to its gates, not by implementing fixes.
 Follow the guidance no-mistakes itself provides for the mechanics: it loads when you invoke /no-mistakes, and \`no-mistakes axi run --help\` plus the \`help\` lines in each \`axi\` response are authoritative and version-matched to the installed binary.
+This fleet currently runs the pipeline with its \`document\` step turned off, so a run that documents nothing is the expected shape here rather than a misconfiguration.
+The pipeline's own configuration drops that step: never name \`document\` in a skip flag of your own, never try to turn the step back on, and never report its absence as a finding.
 Before starting a new run, capture the frozen launch origin with \`$_FM_DOD_LIB_DIR/fm-boat-run.sh caller-origin --worktree "\$PWD" > "\$GOTMPDIR/../caller-origin.json"\` and pass \`--caller-origin-file "\$GOTMPDIR/../caller-origin.json"\` to that new \`no-mistakes axi run\`.
 A failed capture is an ownership blocker; never reconstruct a generation from current metadata or submit an unattributed worker run.
 Ordinary reattachment omits the origin flag.
