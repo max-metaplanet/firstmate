@@ -52,6 +52,8 @@ esac
 /bin/bash --version | head -1
 command -v jq >/dev/null || { echo "::error::jq is required"; exit 1; }
 
+FM_TEST_BASH=/bin/bash /bin/bash tests/fm-prefer.test.sh
+
 shell_inventory="$RUNNER_TEMP/fm-shell-inventory"
 bin/fm-lint.sh --list-files > "$shell_inventory"
 parse_fail=0
