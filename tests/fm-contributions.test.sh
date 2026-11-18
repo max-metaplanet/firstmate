@@ -138,7 +138,7 @@ case "$*" in
     jq -n --arg head "$(cat "$FORGE/head")" --arg state "$(cat "$FORGE/state" 2>/dev/null || printf open)" \
       --arg mergeable "$(cat "$FORGE/mergeable" 2>/dev/null || printf true)" '
       {state:(if $state == "open" then "open" else "closed" end),user:{login:"author"},head:{sha:$head},draft:false,
-       mergeable:(if $state == "open" then ($mergeable == "true") else null end),
+       mergeable:(if $state != "open" or $mergeable == "unknown" then null else ($mergeable == "true") end),
        merged_at:(if $state == "merged" then "2026-09-16T07:00:00Z" else null end)}' ;;
   'api repos/o/r/issues/9')
     jq -n --slurpfile labels "$FORGE/labels.json" '{state:"open",user:{login:"author"},labels:$labels[0]}' ;;
@@ -1761,6 +1761,62 @@ test_parked_observer_transitions() {
   pass 'changed checks, all reviews, conflicts, close and merge queue once, including deferred terminal recovery'
 }
 
+test_parked_mergeability_model() {
+  local home reading remembered=mergeable expected phase seed=7047 step value
+  home=$(new_home parked-mergeability-model)
+  forge_home "$home"
+  printf 'window=test:fm-delivery\n' >> "$home/state/delivery.meta"
+  with_home "$home" "$ROOT/bin/fm-contributions.sh" poll >/dev/null || fail 'mergeability baseline failed'
+
+  local -a readings=(unknown mergeable conflicting unknown conflicting mergeable)
+  for ((step=0; step<12; step++)); do
+    seed=$(((seed * 1103515245 + 12345) % 2147483648))
+    case $((seed % 3)) in
+      0) readings+=(unknown) ;;
+      1) readings+=(mergeable) ;;
+      2) readings+=(conflicting) ;;
+    esac
+  done
+  step=0
+  for reading in "${readings[@]}"; do
+    step=$((step + 1))
+    printf 'phase=parked\ngeneration=legacy\nendpoint=test:fm-delivery\nreason=maintainer wait\nuntil=0\nqueued_at=0\n' > "$home/state/delivery.park"
+    expected=parked
+    if [ "$reading" != unknown ]; then
+      [ "$remembered" = "$reading" ] || expected=queued
+      remembered=$reading
+    fi
+    case "$reading" in
+      unknown) value=unknown ;;
+      mergeable) value=true ;;
+      conflicting) value=false ;;
+    esac
+    printf '%s' "$value" > "$home/forge/mergeable"
+    with_home "$home" "$ROOT/bin/fm-contributions.sh" poll >/dev/null || fail "seed 7047 step $step poll failed"
+    phase=$(sed -n 's/^phase=//p' "$home/state/delivery.park")
+    assert_equals "$expected" "$phase" "seed 7047 step $step reading $reading preserves the resume model"
+    assert_equals "$remembered" "$(jq -r '.records[0].worker_resume.mergeable' "$home/data/delivery/contributions.json")" 'unknown preserves the last definite reading'
+    if [ "$expected/$reading" = queued/conflicting ]; then
+      assert_grep 'reason=PR has conflicts' "$home/state/delivery.park" 'conflicts keep their dedicated resume reason'
+    fi
+  done
+
+  printf true > "$home/forge/mergeable"
+  for value in '"unknown"' '""' null; do
+    mutate_record "$home" delivery ".records[0].worker_resume.mergeable=$value"
+    repark_record "$home/state/delivery.park"
+    with_home "$home" "$ROOT/bin/fm-contributions.sh" poll >/dev/null || fail 'legacy unknown baseline poll failed'
+    assert_grep 'phase=parked' "$home/state/delivery.park" 'learning a definite value from a legacy unknown does not resume'
+
+  done
+
+  printf unknown > "$home/forge/mergeable"
+  printf '%s\n' "$HEAD_B" > "$home/forge/head"
+  with_home "$home" "$ROOT/bin/fm-contributions.sh" poll >/dev/null || fail 'head change with unknown mergeability failed'
+  assert_grep 'phase=queued' "$home/state/delivery.park" 'a head change still resumes during unknown mergeability'
+  pass 'seed 7047 mergeability model ignores unknown flips and preserves real resume signals'
+}
+
 test_running_worker_hint_survives_green_checks() {
   local home
   home=$(new_home running-hint-green)
@@ -1821,7 +1877,7 @@ test_parked_lane_progress_waits_for_a_verdict() {
 }
 
 failures=0
-for test_name in test_parked_lane_progress_waits_for_a_verdict test_running_worker_hint_survives_green_checks test_parked_observer_transitions test_parked_red_ci_reenters_queue test_actor_coverage test_stale_verdict test_unchecked_is_not_silence test_newest_check_has_no_verdict test_comment_wake test_review_wake test_inline_wake test_ready_issue_wake test_fresh_issue_requires_maintainer test_missing_lane_remains_missing test_partial_freshness_keeps_measured_rows test_malformed_record_cannot_prove_silence test_issue_timeline_and_exact_ack test_verdict_retains_judged_head test_verdict_actor_values_are_discoverable test_observed_replacement_refreshes_verdict test_unobserved_head_leaves_verdict_unknown test_away_yolo_is_fleet_work test_away_yolo_cross_home_is_fleet_work test_retired_and_unsupported_coverage test_unsupported_forge_is_not_fleet_work test_held_unsupported_forge_is_not_captain_work test_unsupported_poll_is_silent_and_clears_legacy_errors test_legacy_cleanup_preserves_supported_failure test_shared_contribution_signal_wakes_once test_watcher_keeps_diagnostics_separate_from_contribution_wakes test_expired_child_unsupported_forge_stays_unmeasured test_watcher_surfaces_new_contribution_once test_home_summary_coverage test_unreadable_pending_is_not_empty test_record_task_identity_matches_dirname_basename test_read_only_views_create_no_state test_budget_refusal_between_calls test_budget_bounded_call_timeout test_genuine_failure_near_deadline_is_unavailable test_http_500_once_retries_without_waking test_http_500_twice_records_the_failed_read test_http_404_is_not_retried test_real_gh_errors_drive_retry_and_summary test_next_url_does_not_inherit_a_forge_diagnostic test_shared_url_observed_once test_terminal_contribution_settles test_late_owner_inherits_terminal_observation test_interrupted_multi_owner_poll_settles_every_owner test_done_task_open_pr_still_observed test_reservation_defers_later_url_when_fifteen_seconds_do_not_remain test_three_second_pr_reads_complete_fresh_in_one_cycle test_slow_read_deadline_kill_is_budget_refusal test_unmeasured_url_does_not_starve_the_tail test_budget_is_cut_down_to_the_watcher_check_bound test_arm_plumbs_a_configured_budget_into_the_check_shim test_unavailable_forge_records_error_and_wakes_once_per_episode test_late_owner_keeps_failure_episode_suppressed test_retire_ends_observation_of_a_gone_contribution test_late_owner_of_a_retired_final_contribution_is_not_retired test_retire_is_idempotent_and_refuses_unknown_pairs test_many_reviews_stay_readable; do
+for test_name in test_parked_mergeability_model test_parked_lane_progress_waits_for_a_verdict test_running_worker_hint_survives_green_checks test_parked_observer_transitions test_parked_red_ci_reenters_queue test_actor_coverage test_stale_verdict test_unchecked_is_not_silence test_newest_check_has_no_verdict test_comment_wake test_review_wake test_inline_wake test_ready_issue_wake test_fresh_issue_requires_maintainer test_missing_lane_remains_missing test_partial_freshness_keeps_measured_rows test_malformed_record_cannot_prove_silence test_issue_timeline_and_exact_ack test_verdict_retains_judged_head test_verdict_actor_values_are_discoverable test_observed_replacement_refreshes_verdict test_unobserved_head_leaves_verdict_unknown test_away_yolo_is_fleet_work test_away_yolo_cross_home_is_fleet_work test_retired_and_unsupported_coverage test_unsupported_forge_is_not_fleet_work test_held_unsupported_forge_is_not_captain_work test_unsupported_poll_is_silent_and_clears_legacy_errors test_legacy_cleanup_preserves_supported_failure test_shared_contribution_signal_wakes_once test_watcher_keeps_diagnostics_separate_from_contribution_wakes test_expired_child_unsupported_forge_stays_unmeasured test_watcher_surfaces_new_contribution_once test_home_summary_coverage test_unreadable_pending_is_not_empty test_record_task_identity_matches_dirname_basename test_read_only_views_create_no_state test_budget_refusal_between_calls test_budget_bounded_call_timeout test_genuine_failure_near_deadline_is_unavailable test_http_500_once_retries_without_waking test_http_500_twice_records_the_failed_read test_http_404_is_not_retried test_real_gh_errors_drive_retry_and_summary test_next_url_does_not_inherit_a_forge_diagnostic test_shared_url_observed_once test_terminal_contribution_settles test_late_owner_inherits_terminal_observation test_interrupted_multi_owner_poll_settles_every_owner test_done_task_open_pr_still_observed test_reservation_defers_later_url_when_fifteen_seconds_do_not_remain test_three_second_pr_reads_complete_fresh_in_one_cycle test_slow_read_deadline_kill_is_budget_refusal test_unmeasured_url_does_not_starve_the_tail test_budget_is_cut_down_to_the_watcher_check_bound test_arm_plumbs_a_configured_budget_into_the_check_shim test_unavailable_forge_records_error_and_wakes_once_per_episode test_late_owner_keeps_failure_episode_suppressed test_retire_ends_observation_of_a_gone_contribution test_late_owner_of_a_retired_final_contribution_is_not_retired test_retire_is_idempotent_and_refuses_unknown_pairs test_many_reviews_stay_readable; do
   ( "$test_name" ) || failures=$((failures + 1))
 done
 [ "$failures" -eq 0 ] || fail "$failures contribution regressions"
