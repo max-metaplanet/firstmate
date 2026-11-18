@@ -274,20 +274,196 @@ def path_blocked(path: str, home: str, root: str) -> bool:
     return secrets_path(path, home) or proc_private(path)
 
 
-def is_free_opencode(harness: str | None, model: str | None) -> bool:
-    """A free OpenCode model is an opencode launch on a documented free model.
+def free_model_id(model: str) -> bool:
+    """True when this id is a documented free OpenCode model id.
 
     That is an id whose final segment is `free` or ends in `-free` or `:free`
-    (OpenCode Zen and OpenRouter free ids, such as GLM and DeepSeek ones),
-    `big-pickle`, or no model at all, since opencode's own default may be
-    free. Another harness stays paid even when its id ends in `-free`.
+    (OpenCode Zen and OpenRouter free ids, such as GLM and DeepSeek ones), or
+    `big-pickle`.
+    This is the one definition of free; both the explicit model and the one
+    read back from OpenCode's own configuration go through it.
+    """
+    leaf = model.split("/")[-1].lower()
+    return leaf in ("free", "big-pickle") or leaf.endswith(("-free", ":free"))
+
+
+def strip_jsonc(text: str) -> str:
+    """JSON text from JSONC: `//` and `/* */` comments and trailing commas go.
+
+    Both passes skip string contents, so a `//` or `,}` inside a string stays.
+    """
+
+    def scan(source: str, outside):
+        out = []
+        index = 0
+        in_string = False
+        while index < len(source):
+            char = source[index]
+            if in_string:
+                out.append(char)
+                if char == "\\" and index + 1 < len(source):
+                    out.append(source[index + 1])
+                    index += 1
+                elif char == '"':
+                    in_string = False
+                index += 1
+                continue
+            if char == '"':
+                in_string = True
+                out.append(char)
+                index += 1
+                continue
+            index = outside(source, index, out)
+        return "".join(out)
+
+    def comments(source: str, index: int, out: list) -> int:
+        if source.startswith("//", index):
+            end = source.find("\n", index)
+            return len(source) if end < 0 else end
+        if source.startswith("/*", index):
+            end = source.find("*/", index + 2)
+            return len(source) if end < 0 else end + 2
+        out.append(source[index])
+        return index + 1
+
+    def commas(source: str, index: int, out: list) -> int:
+        if source[index] == ",":
+            ahead = index + 1
+            while ahead < len(source) and source[ahead] in " \t\r\n":
+                ahead += 1
+            if ahead < len(source) and source[ahead] in "}]":
+                return index + 1
+        out.append(source[index])
+        return index + 1
+
+    return scan(scan(text, comments), commas)
+
+
+def opencode_configured_model(launch_dir: str | None = None) -> str | None:
+    """OpenCode's own default model id for a launch in `launch_dir`, or None.
+
+    Only one source counts as certain: the global `opencode.json` under
+    `XDG_CONFIG_HOME`, falling back to `~/.config`, read as JSONC, whose
+    top-level `model` key is a plain id string or an object of `providerID`
+    and `model` that composes as `<providerID>/<model>`.
+    None means the id did not resolve with certainty. That covers every layer
+    OpenCode could merge over that file: `OPENCODE_CONFIG`,
+    `OPENCODE_CONFIG_CONTENT`, or `OPENCODE_CONFIG_DIR` set at all, an
+    `opencode.json` or `opencode.jsonc` in a managed config dir
+    (`/Library/Application Support/opencode` or `/etc/opencode`), a global
+    `opencode.jsonc` or override file under `agent/`, `agents/`, `mode/`, or
+    `modes/`, a global `default_agent` key or `agent`, `agents`, or `mode`
+    entry carrying a `model`, or a project `opencode.json` or
+    `opencode.jsonc`, `.opencode/opencode.json` or `.opencode/opencode.jsonc`,
+    or override file under those four `.opencode/` subdirectories in the
+    launch directory or an ancestor up to the
+    repository root. A bare `.opencode` directory, such as the plugin
+    directory firstmate writes, selects no model and is not a layer. It
+    also covers an id holding an unexpanded `{env:` or `{file:` placeholder, and every read
+    failure: a missing, unreadable, or unparsable file, a document that is not
+    an object, or a `model` that is absent, null, partial, or another shape.
+    This runs on a guard path, so it never raises: over-confining is better
+    than crashing the classification.
+    """
+
+    def agent_file(base: str) -> bool:
+        for sub in ("agent", "agents", "mode", "modes"):
+            for _, _, files in os.walk(os.path.join(base, sub)):
+                if files:
+                    return True
+        return False
+
+    def carries_model(value) -> bool:
+        if isinstance(value, dict):
+            return "model" in value or any(carries_model(item) for item in value.values())
+        if isinstance(value, list):
+            return any(carries_model(item) for item in value)
+        return False
+
+    try:
+        if any(
+            name in os.environ
+            for name in ("OPENCODE_CONFIG", "OPENCODE_CONFIG_CONTENT", "OPENCODE_CONFIG_DIR")
+        ):
+            return None
+        managed_dirs = ["/Library/Application Support/opencode", "/etc/opencode"]
+        if os.environ.get("FM_TEST_SEAM") == "1" and os.environ.get("FM_TEST_OPENCODE_MANAGED_DIR"):
+            managed_dirs = [os.environ["FM_TEST_OPENCODE_MANAGED_DIR"]]
+        for managed in managed_dirs:
+            for name in ("opencode.json", "opencode.jsonc"):
+                if os.path.lexists(os.path.join(managed, name)):
+                    return None
+        directory = os.path.realpath(launch_dir or os.getcwd())
+        while True:
+            dot = os.path.join(directory, ".opencode")
+            for path in (
+                os.path.join(directory, "opencode.json"),
+                os.path.join(directory, "opencode.jsonc"),
+                os.path.join(dot, "opencode.json"),
+                os.path.join(dot, "opencode.jsonc"),
+            ):
+                if os.path.lexists(path):
+                    return None
+            if agent_file(dot):
+                return None
+            parent = os.path.dirname(directory)
+            if os.path.lexists(os.path.join(directory, ".git")) or parent == directory:
+                break
+            directory = parent
+        config_home = os.environ.get("XDG_CONFIG_HOME") or os.path.join(
+            os.path.expanduser("~"), ".config"
+        )
+        config_dir = os.path.join(config_home, "opencode")
+        if os.path.lexists(os.path.join(config_dir, "opencode.jsonc")) or agent_file(config_dir):
+            return None
+        with open(os.path.join(config_dir, "opencode.json"), encoding="utf-8") as handle:
+            config = json.loads(strip_jsonc(handle.read()))
+        if (
+            not isinstance(config, dict)
+            or "default_agent" in config
+            or any(carries_model(config.get(key)) for key in ("agent", "agents", "mode"))
+        ):
+            return None
+        model = config.get("model")
+        resolved = None
+        if isinstance(model, str) and model.strip():
+            resolved = model.strip()
+        elif isinstance(model, dict):
+            provider = model.get("providerID")
+            name = model.get("model")
+            if (
+                isinstance(provider, str)
+                and isinstance(name, str)
+                and provider.strip()
+                and name.strip()
+            ):
+                resolved = f"{provider.strip()}/{name.strip()}"
+        if resolved is None or "{env:" in resolved or "{file:" in resolved:
+            return None
+        return resolved
+    except Exception:
+        return None
+
+
+def is_free_opencode(harness: str | None, model: str | None, launch_dir: str | None = None) -> bool:
+    """A free OpenCode model is an opencode launch on a documented free model.
+
+    An explicit id is free when `free_model_id` says so.
+    A launch that names no model or `default` leaves the choice to OpenCode,
+    so the id OpenCode itself is configured to use for a launch in
+    `launch_dir` (the current directory when unset) decides: a paid
+    configured default is paid and takes no confine, and a free one stays free.
+    When that configured default does not resolve with certainty the launch
+    stays free, since an unknown default may be free and the confine is the
+    safe side.
+    Another harness stays paid even when its id ends in `-free`.
     """
     if harness != "opencode":
         return False
     if not model or model == "default":
-        return True
-    leaf = model.split("/")[-1].lower()
-    return leaf in ("free", "big-pickle") or leaf.endswith(("-free", ":free"))
+        configured = opencode_configured_model(launch_dir)
+        return True if configured is None else free_model_id(configured)
+    return free_model_id(model)
 
 
 def token_name(name: str) -> bool:
@@ -1373,8 +1549,12 @@ def path_refused(path: str, home: str) -> str | None:
 def mech_refusal(model: str | None, paths: list[str], prompt: str, home: str) -> str | None:
     """Why this handoff must not launch, or None when it may."""
     if not is_free_opencode("opencode", model):
-        shown = model if model else ""
-        return f"refusing '{shown}' because it is not a documented free OpenCode model"
+        if model and model != "default":
+            shown = f"'{model}'"
+        else:
+            configured = opencode_configured_model()
+            shown = f"OpenCode's configured default '{configured}'" if configured else "OpenCode's default model"
+        return f"refusing {shown} because it is not a documented free OpenCode model"
     if not prompt.strip():
         return "mech needs the edit after --"
     if not paths:
@@ -1548,7 +1728,7 @@ def mech(argv: list[str]) -> int:
 def usage() -> None:
     print(
         "usage: fm-free-model-sensitivity.sh class <path>\n"
-        "       fm-free-model-sensitivity.sh free-model --harness <h> --model <id>\n"
+        "       fm-free-model-sensitivity.sh free-model --harness <h> --model <id> [--dir <launch dir>]\n"
         "       fm-free-model-sensitivity.sh token-name <NAME>\n"
         "       fm-free-model-sensitivity.sh brief-sensitive --brief <file>\n"
         "       fm-free-model-sensitivity.sh apply-resolution --brief <file>\n"
@@ -1602,7 +1782,11 @@ def main(argv: list[str]) -> int:
         except SystemExit:
             usage()
             return 2
-        return 0 if is_free_opencode(harness, model) else 1
+        try:
+            launch_dir = flag_value(argv[2:], "--dir")
+        except SystemExit:
+            launch_dir = None
+        return 0 if is_free_opencode(harness, model, launch_dir) else 1
     if cmd == "token-name":
         if len(argv) != 3:
             usage()
