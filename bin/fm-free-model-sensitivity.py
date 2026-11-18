@@ -351,14 +351,34 @@ def opencode_configured_model(launch_dir: str | None = None) -> str | None:
     `OPENCODE_CONFIG_CONTENT`, or `OPENCODE_CONFIG_DIR` set at all, an
     `opencode.json` or `opencode.jsonc` in a managed config dir
     (`/Library/Application Support/opencode` or `/etc/opencode`), a global
-    `opencode.jsonc`, or a project `opencode.json`, `opencode.jsonc`, or `.opencode` in the launch
-    directory or an ancestor up to the repository root. It also covers an
-    id holding an unexpanded `{env:` or `{file:` placeholder, and every read
+    `opencode.jsonc` or agent file under `agent/` or `agents/`, a global
+    `default_agent` key or `agent` entry carrying a `model`, or a project
+    `opencode.json` or `opencode.jsonc`, `.opencode/opencode.json` or
+    `.opencode/opencode.jsonc`, or agent file under `.opencode/agent/` or
+    `.opencode/agents/` in the launch directory or an ancestor up to the
+    repository root. A bare `.opencode` directory, such as the plugin
+    directory firstmate writes, selects no model and is not a layer. It
+    also covers an id holding an unexpanded `{env:` or `{file:` placeholder, and every read
     failure: a missing, unreadable, or unparsable file, a document that is not
     an object, or a `model` that is absent, null, partial, or another shape.
     This runs on a guard path, so it never raises: over-confining is better
     than crashing the classification.
     """
+
+    def agent_file(base: str) -> bool:
+        for sub in ("agent", "agents"):
+            for _, _, files in os.walk(os.path.join(base, sub)):
+                if files:
+                    return True
+        return False
+
+    def carries_model(value) -> bool:
+        if isinstance(value, dict):
+            return "model" in value or any(carries_model(item) for item in value.values())
+        if isinstance(value, list):
+            return any(carries_model(item) for item in value)
+        return False
+
     try:
         if any(
             name in os.environ
@@ -374,9 +394,17 @@ def opencode_configured_model(launch_dir: str | None = None) -> str | None:
                     return None
         directory = os.path.realpath(launch_dir or os.getcwd())
         while True:
-            for name in ("opencode.json", "opencode.jsonc", ".opencode"):
-                if os.path.lexists(os.path.join(directory, name)):
+            dot = os.path.join(directory, ".opencode")
+            for path in (
+                os.path.join(directory, "opencode.json"),
+                os.path.join(directory, "opencode.jsonc"),
+                os.path.join(dot, "opencode.json"),
+                os.path.join(dot, "opencode.jsonc"),
+            ):
+                if os.path.lexists(path):
                     return None
+            if agent_file(dot):
+                return None
             parent = os.path.dirname(directory)
             if os.path.lexists(os.path.join(directory, ".git")) or parent == directory:
                 break
@@ -385,11 +413,15 @@ def opencode_configured_model(launch_dir: str | None = None) -> str | None:
             os.path.expanduser("~"), ".config"
         )
         config_dir = os.path.join(config_home, "opencode")
-        if os.path.lexists(os.path.join(config_dir, "opencode.jsonc")):
+        if os.path.lexists(os.path.join(config_dir, "opencode.jsonc")) or agent_file(config_dir):
             return None
         with open(os.path.join(config_dir, "opencode.json"), encoding="utf-8") as handle:
             config = json.loads(strip_jsonc(handle.read()))
-        if not isinstance(config, dict):
+        if (
+            not isinstance(config, dict)
+            or "default_agent" in config
+            or carries_model(config.get("agent"))
+        ):
             return None
         model = config.get("model")
         resolved = None

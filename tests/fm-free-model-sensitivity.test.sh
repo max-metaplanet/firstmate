@@ -473,6 +473,14 @@ expect_configured_default not-an-object '["cliproxy/grok-4.7"]' free
 expect_configured_default paid-jsonc $'{\n  // CLIProxy tunnel\n  /* paid */ "model": "cliproxy/grok-4.7",\n}' paid
 expect_configured_default paid-jsonc-string-text \
   '{"note":"http://host /* x */ ,}","model":"cliproxy/grok-4.7",}' paid
+# An agent can override the top-level model, so an agent model or a
+# default_agent leaves the default uncertain; an agent entry without a model
+# does not.
+expect_configured_default agent-build-model \
+  '{"model":"cliproxy/grok-4.7","agent":{"build":{"model":"opencode/big-pickle"}}}' free
+expect_configured_default default-agent '{"model":"cliproxy/grok-4.7","default_agent":"plan"}' free
+expect_configured_default agent-without-model \
+  '{"model":"cliproxy/grok-4.7","agent":{"build":{"temperature":0.2}}}' paid
 # An unexpanded placeholder is not a model id.
 expect_configured_default env-placeholder '{"model":"{env:OPENCODE_MODEL}"}' free
 expect_configured_default file-placeholder \
@@ -495,9 +503,22 @@ oc_classify free "$OC_PAID" "$dir" "a free project model beside a paid global on
 dir=$(oc_project jsonc)
 printf '%s' '{"model":"cliproxy/grok-4.7"}' > "$dir/opencode.jsonc"
 oc_classify free "$OC_PAID" "$dir" "a project opencode.jsonc"
-dir=$(oc_project dot-opencode)
-mkdir -p "$dir/.opencode"
-oc_classify free "$OC_PAID" "$dir" "a project .opencode directory"
+dir=$(oc_project dot-opencode-plugins)
+mkdir -p "$dir/.opencode/plugins" "$dir/.opencode/agent" "$dir/.opencode/agents"
+printf 'export const plugin = async () => ({})\n' > "$dir/.opencode/plugins/fm-busy-state.js"
+oc_classify paid "$OC_PAID" "$dir" "a .opencode plugin dir with empty agent dirs, as fm-spawn leaves a worktree,"
+for name in opencode.json opencode.jsonc; do
+  dir=$(oc_project "dot-opencode-$name")
+  mkdir -p "$dir/.opencode/plugins"
+  printf '%s' '{"model":"opencode/big-pickle"}' > "$dir/.opencode/$name"
+  oc_classify free "$OC_PAID" "$dir" "a project .opencode/$name"
+done
+for sub in agent agents; do
+  dir=$(oc_project "dot-opencode-$sub")
+  mkdir -p "$dir/.opencode/$sub"
+  printf -- '---\nmodel: opencode/big-pickle\n---\nbuild\n' > "$dir/.opencode/$sub/build.md"
+  oc_classify free "$OC_PAID" "$dir" "a project .opencode/$sub agent file"
+done
 dir=$(oc_project ancestor)
 printf '%s' '{"model":"opencode/big-pickle"}' > "$dir/opencode.json"
 oc_classify free "$OC_PAID" "$dir/app/src" "a project config in the repository root above the launch directory"
@@ -525,6 +546,15 @@ for name in opencode.json opencode.jsonc; do
   mkdir -p "$managed"
   printf '%s' '{"model":"opencode/big-pickle"}' > "$managed/$name"
   oc_classify free "$OC_PAID" "$OC_PROJECT" "a managed $name" FM_TEST_OPENCODE_MANAGED_DIR="$managed"
+done
+OC_AGENT_DIRS=$(oc_config_case empty-agent-dirs '{"model":"cliproxy/grok-4.7"}')
+mkdir -p "$OC_AGENT_DIRS/opencode/agent" "$OC_AGENT_DIRS/opencode/agents"
+oc_classify paid "$OC_AGENT_DIRS" "$OC_PROJECT" "empty global agent dirs"
+for sub in agent agents; do
+  cfg=$(oc_config_case "global-$sub-file" '{"model":"cliproxy/grok-4.7"}')
+  mkdir -p "$cfg/opencode/$sub"
+  printf -- '---\nmodel: opencode/big-pickle\n---\nbuild\n' > "$cfg/opencode/$sub/build.md"
+  oc_classify free "$cfg" "$OC_PROJECT" "a global $sub agent file"
 done
 pass "any OpenCode config layer over the global file, including a free project model beside a paid global one, keeps the confine"
 
