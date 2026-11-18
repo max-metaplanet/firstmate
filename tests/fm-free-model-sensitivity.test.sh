@@ -412,20 +412,24 @@ oc_config_case() {
   printf '%s' "$dir"
 }
 
-# Every case launches from a private git project with no OpenCode files and
-# with OPENCODE_CONFIG and OPENCODE_CONFIG_CONTENT unset, so the global config
-# is the only layer unless a case adds one.
+# Every case launches from a private git project with no OpenCode files, with
+# OPENCODE_CONFIG, OPENCODE_CONFIG_CONTENT, and OPENCODE_CONFIG_DIR unset, and
+# with the managed config dir pointed at an empty temporary dir through the
+# test seam, so the global config is the only layer unless a case adds one.
 oc_project() {
   local dir="$TMP_ROOT/opencode-project-$1"
   mkdir -p "$dir/.git" "$dir/app/src"
   printf '%s' "$dir"
 }
 
+OC_MANAGED_EMPTY="$TMP_ROOT/opencode-managed-empty"
+mkdir -p "$OC_MANAGED_EMPTY"
 oc_classify() {
   local want=$1 config=$2 dir=$3 label=$4 model got
   shift 4
   for model in '' default; do
-    if env -u OPENCODE_CONFIG -u OPENCODE_CONFIG_CONTENT XDG_CONFIG_HOME="$config" "$@" \
+    if env -u OPENCODE_CONFIG -u OPENCODE_CONFIG_CONTENT -u OPENCODE_CONFIG_DIR XDG_CONFIG_HOME="$config" \
+      FM_TEST_SEAM=1 FM_TEST_OPENCODE_MANAGED_DIR="$OC_MANAGED_EMPTY" "$@" \
       "$SENS" free-model --harness opencode --model "$model" --dir "$dir"; then
       got=free
     else
@@ -512,6 +516,16 @@ printf '%s' '{"model":"cliproxy/grok-4.7"}' > "$OC_JSONC_ONLY/opencode/opencode.
 oc_classify free "$OC_JSONC_ONLY" "$OC_PROJECT" "a global opencode.jsonc instead of opencode.json"
 oc_classify free "$OC_PAID" "$OC_PROJECT" "OPENCODE_CONFIG set" OPENCODE_CONFIG="$TMP_ROOT/no-such-opencode.json"
 oc_classify free "$OC_PAID" "$OC_PROJECT" "OPENCODE_CONFIG_CONTENT set empty" OPENCODE_CONFIG_CONTENT=
+OC_CONFIG_DIR="$TMP_ROOT/opencode-config-dir"
+mkdir -p "$OC_CONFIG_DIR"
+printf '%s' '{"model":"opencode/big-pickle"}' > "$OC_CONFIG_DIR/opencode.json"
+oc_classify free "$OC_PAID" "$OC_PROJECT" "OPENCODE_CONFIG_DIR set" OPENCODE_CONFIG_DIR="$OC_CONFIG_DIR"
+for name in opencode.json opencode.jsonc; do
+  managed="$TMP_ROOT/opencode-managed-$name"
+  mkdir -p "$managed"
+  printf '%s' '{"model":"opencode/big-pickle"}' > "$managed/$name"
+  oc_classify free "$OC_PAID" "$OC_PROJECT" "a managed $name" FM_TEST_OPENCODE_MANAGED_DIR="$managed"
+done
 pass "any OpenCode config layer over the global file, including a free project model beside a paid global one, keeps the confine"
 
 # mech is the worker handoff. A paid id or a sensitive path never launches.
@@ -576,7 +590,8 @@ mech_run() {
   MECH_ERR=$TMP_ROOT/mech-err
   MECH_OUT=$(
     cd "$MECH_REPO/${MECH_CWD:-}" && DOPPLER_TOKEN=secret AWS_REGION=us-east-1 HOME="$TREE/home" XDG_CONFIG_HOME="${MECH_XDG:-$OC_EMPTY_CONFIG}" PATH="$MECH_BIN:$PATH" \
-      env -u OPENCODE_CONFIG -u OPENCODE_CONFIG_CONTENT "$SENS" "$@" 2>"$MECH_ERR"
+      env -u OPENCODE_CONFIG -u OPENCODE_CONFIG_CONTENT -u OPENCODE_CONFIG_DIR \
+        FM_TEST_SEAM=1 FM_TEST_OPENCODE_MANAGED_DIR="$OC_MANAGED_EMPTY" "$SENS" "$@" 2>"$MECH_ERR"
   ) || status=$?
   MECH_STATUS=$status
 }

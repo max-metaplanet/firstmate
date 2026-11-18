@@ -347,9 +347,11 @@ def opencode_configured_model(launch_dir: str | None = None) -> str | None:
     top-level `model` key is a plain id string or an object of `providerID`
     and `model` that composes as `<providerID>/<model>`.
     None means the id did not resolve with certainty. That covers every layer
-    OpenCode could merge over that file: `OPENCODE_CONFIG` or
-    `OPENCODE_CONFIG_CONTENT` set at all, a global `opencode.jsonc`, or a
-    project `opencode.json`, `opencode.jsonc`, or `.opencode` in the launch
+    OpenCode could merge over that file: `OPENCODE_CONFIG`,
+    `OPENCODE_CONFIG_CONTENT`, or `OPENCODE_CONFIG_DIR` set at all, an
+    `opencode.json` or `opencode.jsonc` in a managed config dir
+    (`/Library/Application Support/opencode` or `/etc/opencode`), a global
+    `opencode.jsonc`, or a project `opencode.json`, `opencode.jsonc`, or `.opencode` in the launch
     directory or an ancestor up to the repository root. It also covers an
     id holding an unexpanded `{env:` or `{file:` placeholder, and every read
     failure: a missing, unreadable, or unparsable file, a document that is not
@@ -358,8 +360,18 @@ def opencode_configured_model(launch_dir: str | None = None) -> str | None:
     than crashing the classification.
     """
     try:
-        if "OPENCODE_CONFIG" in os.environ or "OPENCODE_CONFIG_CONTENT" in os.environ:
+        if any(
+            name in os.environ
+            for name in ("OPENCODE_CONFIG", "OPENCODE_CONFIG_CONTENT", "OPENCODE_CONFIG_DIR")
+        ):
             return None
+        managed_dirs = ["/Library/Application Support/opencode", "/etc/opencode"]
+        if os.environ.get("FM_TEST_SEAM") == "1" and os.environ.get("FM_TEST_OPENCODE_MANAGED_DIR"):
+            managed_dirs = [os.environ["FM_TEST_OPENCODE_MANAGED_DIR"]]
+        for managed in managed_dirs:
+            for name in ("opencode.json", "opencode.jsonc"):
+                if os.path.lexists(os.path.join(managed, name)):
+                    return None
         directory = os.path.realpath(launch_dir or os.getcwd())
         while True:
             for name in ("opencode.json", "opencode.jsonc", ".opencode"):
