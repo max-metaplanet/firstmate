@@ -1,0 +1,13 @@
+## Oracle: real opencode v2.2.5 resolution per config (fresh service each time)
+S1 global model=cliproxy/grok-4.7
+ opencode debug config: [('document', '$T/xdg/opencode/opencode.json', {'model': {'providerID': 'cliproxy', 'model': 'grok-4.7'}}), ('directory', '$T/xdg/opencode', None), ('directory', '$T/wt/.opencode', None)]
+ opencode debug agents: build model = None
+S4 global model=opencode/big-pickle
+ opencode debug config: [('document', '$T/xdg/opencode/opencode.json', {'model': {'providerID': 'opencode', 'model': 'big-pickle'}}), ('directory', '$T/xdg/opencode', None), ('directory', '$T/wt/.opencode', None)]
+ opencode debug agents: build model = None
+S7 paid top-level + agent.build.model big-pickle
+ opencode debug config: [('document', '$T/xdg/opencode/opencode.json', {'model': {'providerID': 'cliproxy', 'model': 'grok-4.7'}, 'agents': {'build': {'model': {'providerID': 'opencode', 'model': 'big-pickle'}}}}), ('directory', '$T/xdg/opencode', None), ('directory', '$T/wt/.opencode', None)]
+ opencode debug agents: build model = {'id': 'big-pickle', 'providerID': 'opencode'}
+S10 paid global + project opencode.json big-pickle
+ opencode debug config: [('document', '$T/xdg/opencode/opencode.json', {'model': {'providerID': 'cliproxy', 'model': 'grok-4.7'}}), ('directory', '$T/xdg/opencode', None), ('document', '$T/wt/opencode.json', {'model': {'providerID': 'opencode', 'model': 'big-pickle'}}), ('directory', '$T/wt/.opencode', None)]
+ opencode debug agents: build model = None

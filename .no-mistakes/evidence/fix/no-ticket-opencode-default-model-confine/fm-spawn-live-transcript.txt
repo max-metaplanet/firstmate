@@ -1,0 +1,5 @@
+paid-string: spawn_rc=0 fm-busy-state.js_written=yes confine_in_launch=no opencode_standalone=no
+paid-object: spawn_rc=0 fm-busy-state.js_written=yes confine_in_launch=no opencode_standalone=no
+free: spawn_rc=0 fm-busy-state.js_written=yes confine_in_launch=yes opencode_standalone=yes
+unresolved: spawn_rc=0 fm-busy-state.js_written=yes confine_in_launch=yes opencode_standalone=yes
+agent-override: spawn_rc=0 fm-busy-state.js_written=yes confine_in_launch=yes opencode_standalone=yes

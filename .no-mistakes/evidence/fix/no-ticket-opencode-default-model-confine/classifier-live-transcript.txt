@@ -1,0 +1,61 @@
+WT .opencode contents (tracked plugins + fm-spawn plugin):
+  fm-busy-state.js
+  fm-primary-cd-check.js
+  fm-primary-pretool-check.js
+  fm-primary-sessionstart-nudge.js
+  fm-primary-turnend-guard.js
+  fm-primary-watch-arm.js
+  lib
+  package.json
+
+### S1 telos64: global model=cliproxy/grok-4.7, --model '' in firstmate worktree
+opencode debug config layers: [('document', '$T/xdg/opencode/opencode.json', {'model': {'providerID': 'cliproxy', 'model': 'grok-4.7'}}), ('directory', '$T/xdg/opencode', None), ('directory', '$T/wt/.opencode', None)]
+classifier: PAID -> no confine (exit 1)
+
+### S2 same, --model default
+classifier: PAID -> no confine (exit 1)
+
+### S3 object form {providerID:cliproxy, model:grok-4.7}
+classifier: PAID -> no confine (exit 1)
+
+### S4 free configured default opencode/big-pickle
+opencode debug config layers: [('document', '$T/xdg/opencode/opencode.json', {'model': {'providerID': 'cliproxy', 'model': 'grok-4.7'}}), ('directory', '$T/xdg/opencode', None), ('directory', '$T/wt/.opencode', None)]
+classifier: FREE -> confine applied (exit 0)
+
+### S5 no opencode config at all (unresolvable -> today's behaviour)
+classifier: FREE -> confine applied (exit 0)
+
+### S6 config without model key
+classifier: FREE -> confine applied (exit 0)
+
+### S7 adversarial: agent.build.model free beside paid top-level
+classifier: FREE -> confine applied (exit 0)
+opencode debug agents: build model= None
+
+### S8 adversarial: mode key carrying free model
+classifier: FREE -> confine applied (exit 0)
+
+### S9 adversarial: global mode/build.md override file
+classifier: FREE -> confine applied (exit 0)
+
+### S10 adversarial: project opencode.json in worktree selecting free model
+opencode debug config layers: [('document', '$T/xdg/opencode/opencode.json', {'model': {'providerID': 'cliproxy', 'model': 'grok-4.7'}}), ('directory', '$T/xdg/opencode', None), ('directory', '$T/wt/.opencode', None)]
+classifier: FREE -> confine applied (exit 0)
+
+### S11 adversarial: OPENCODE_CONFIG set
+classifier exit 0 (0=FREE/confine)
+
+### S12 adversarial: {env:...} placeholder model
+classifier: FREE -> confine applied (exit 0)
+
+### S13 adversarial: global opencode.jsonc layer
+classifier: FREE -> confine applied (exit 0)
+
+### S14 regression: explicit free model with paid default still confines
+classifier: FREE -> confine applied (exit 0)
+
+### S15 regression: explicit paid model
+classifier: PAID -> no confine (exit 1)
+
+### S16 regression: non-opencode harness
+classifier exit 1 (1=PAID)
