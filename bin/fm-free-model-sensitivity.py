@@ -274,20 +274,77 @@ def path_blocked(path: str, home: str, root: str) -> bool:
     return secrets_path(path, home) or proc_private(path)
 
 
+def free_model_id(model: str) -> bool:
+    """True when this id is a documented free OpenCode model id.
+
+    That is an id whose final segment is `free` or ends in `-free` or `:free`
+    (OpenCode Zen and OpenRouter free ids, such as GLM and DeepSeek ones), or
+    `big-pickle`.
+    This is the one definition of free; both the explicit model and the one
+    read back from OpenCode's own configuration go through it.
+    """
+    leaf = model.split("/")[-1].lower()
+    return leaf in ("free", "big-pickle") or leaf.endswith(("-free", ":free"))
+
+
+def opencode_configured_model() -> str | None:
+    """OpenCode's own default model id from the launching host, or None.
+
+    OpenCode reads `opencode.json` under `XDG_CONFIG_HOME`, falling back to
+    `~/.config`, and its top-level `model` key is either a plain id string or
+    an object of `providerID` and `model` that composes as `<providerID>/<model>`.
+    None means the id did not resolve, which covers every failure: the file is
+    missing, unreadable, or not valid JSON, the document is not an object, the
+    `model` key is absent or null, the object form is missing either part, or
+    the value is any other shape.
+    This runs on a guard path, so it never raises: over-confining is better
+    than crashing the classification.
+    """
+    try:
+        config_home = os.environ.get("XDG_CONFIG_HOME") or os.path.join(
+            os.path.expanduser("~"), ".config"
+        )
+        with open(
+            os.path.join(config_home, "opencode", "opencode.json"), encoding="utf-8"
+        ) as handle:
+            config = json.load(handle)
+        if not isinstance(config, dict):
+            return None
+        model = config.get("model")
+        if isinstance(model, str) and model.strip():
+            return model.strip()
+        if isinstance(model, dict):
+            provider = model.get("providerID")
+            name = model.get("model")
+            if (
+                isinstance(provider, str)
+                and isinstance(name, str)
+                and provider.strip()
+                and name.strip()
+            ):
+                return f"{provider.strip()}/{name.strip()}"
+        return None
+    except Exception:
+        return None
+
+
 def is_free_opencode(harness: str | None, model: str | None) -> bool:
     """A free OpenCode model is an opencode launch on a documented free model.
 
-    That is an id whose final segment is `free` or ends in `-free` or `:free`
-    (OpenCode Zen and OpenRouter free ids, such as GLM and DeepSeek ones),
-    `big-pickle`, or no model at all, since opencode's own default may be
-    free. Another harness stays paid even when its id ends in `-free`.
+    An explicit id is free when `free_model_id` says so.
+    A launch that names no model or `default` leaves the choice to OpenCode,
+    so the id OpenCode itself is configured to use decides: a paid configured
+    default is paid and takes no confine, and a free one stays free.
+    When that configured default does not resolve the launch stays free, since
+    an unknown default may be free and the confine is the safe side.
+    Another harness stays paid even when its id ends in `-free`.
     """
     if harness != "opencode":
         return False
     if not model or model == "default":
-        return True
-    leaf = model.split("/")[-1].lower()
-    return leaf in ("free", "big-pickle") or leaf.endswith(("-free", ":free"))
+        configured = opencode_configured_model()
+        return True if configured is None else free_model_id(configured)
+    return free_model_id(model)
 
 
 def token_name(name: str) -> bool:

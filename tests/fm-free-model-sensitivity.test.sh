@@ -375,17 +375,85 @@ sigpipe_out=$(cd "$TREE/work" && timeout 10 "$SENS" confine --home "$TREE/home" 
 pass "pipelines end on SIGPIPE under the confine as they do outside it"
 
 # The captain's documented free list: OpenCode Zen and OpenRouter free ids,
-# big-pickle, and an OpenCode launch that names no model or `default`.
+# big-pickle, and an OpenCode launch that names no model or `default` whose
+# configured default does not resolve.
 # Paid OpenCode, Grok, Codex, and Claude are not free OpenCode models.
+# An empty XDG_CONFIG_HOME holds the no-model and `default` cases at the
+# unresolved branch, so this list never reads the real user config.
+OC_EMPTY_CONFIG="$TMP_ROOT/opencode-config-empty"
+mkdir -p "$OC_EMPTY_CONFIG"
 for model in opencode/glm-5.3-flash-free opencode/deepseek-v4-free opencode/big-pickle \
   openrouter/deepseek/deepseek-chat-v3:free openrouter/z-ai/glm-4.5-air:free '' default; do
-  "$SENS" free-model --harness opencode --model "$model" || fail "OpenCode model '${model}' should be free"
+  XDG_CONFIG_HOME="$OC_EMPTY_CONFIG" "$SENS" free-model --harness opencode --model "$model" ||
+    fail "OpenCode model '${model}' should be free"
 done
 "$SENS" free-model --harness opencode --model anthropic/claude-sonnet-4-5 && fail "a paid OpenCode model was treated as free"
 "$SENS" free-model --harness grok --model grok-4-free && fail "a Grok model was treated as a free OpenCode model"
 "$SENS" free-model --harness codex --model gpt-5 && fail "Codex was treated as a free OpenCode model"
 "$SENS" free-model --harness claude --model claude-sonnet-4-5 && fail "Claude was treated as a free OpenCode model"
 pass "documented free OpenCode models and a model-less OpenCode launch are free, and paid ones are not"
+
+# OpenCode v2.2.5 has no --model flag, so a launch on its own default names no
+# model here. What that default actually is decides the confine: a paid
+# configured default must NOT be confined (the telos64 CLIProxy Grok case), a
+# free one still is, and an id that does not resolve keeps the confine.
+# Each case writes its own opencode.json under a private XDG_CONFIG_HOME, so no
+# case reads the real user config.
+# Classification is read from the command's exit status, never from internals.
+oc_config_case() {
+  local name=$1 body=$2 dir
+  dir="$TMP_ROOT/opencode-config-$name"
+  mkdir -p "$dir/opencode"
+  if [ "$body" = __missing__ ]; then
+    rm -f "$dir/opencode/opencode.json"
+  else
+    printf '%s' "$body" > "$dir/opencode/opencode.json"
+  fi
+  printf '%s' "$dir"
+}
+
+expect_configured_default() {
+  local name=$1 body=$2 want=$3 dir model
+  dir=$(oc_config_case "$name" "$body")
+  for model in '' default; do
+    if XDG_CONFIG_HOME="$dir" "$SENS" free-model --harness opencode --model "$model"; then
+      [ "$want" = free ] ||
+        fail "configured default '$name' was treated as free for model '${model:-<empty>}'"
+    else
+      [ "$want" = paid ] ||
+        fail "configured default '$name' was treated as paid for model '${model:-<empty>}'"
+    fi
+  done
+}
+
+# A paid id, as a plain string and in the {providerID,model} object form.
+expect_configured_default paid-string '{"model":"cliproxy/grok-4.7"}' paid
+expect_configured_default paid-object \
+  '{"model":{"providerID":"cliproxy","model":"grok-4.7"}}' paid
+# A free id reached through the config stays free, in both shapes, and it is
+# the same free-id rule the explicit path uses.
+expect_configured_default free-string '{"model":"opencode/glm-5.3-flash-free"}' free
+expect_configured_default free-object \
+  '{"model":{"providerID":"openrouter","model":"z-ai/glm-4.5-air:free"}}' free
+expect_configured_default free-big-pickle '{"model":"opencode/big-pickle"}' free
+# Every way the id can fail to resolve keeps today's behaviour, and none of
+# them may raise out of the guard.
+expect_configured_default missing-file __missing__ free
+expect_configured_default malformed '{"model": "cliproxy/grok-4.7"' free
+# shellcheck disable=SC2016 # A literal $schema key, as the real config carries it.
+expect_configured_default no-model-key '{"$schema":"https://opencode.ai/config.json","provider":{}}' free
+expect_configured_default null-model '{"model":null}' free
+expect_configured_default wrong-shape-number '{"model":42}' free
+expect_configured_default wrong-shape-list '{"model":["cliproxy/grok-4.7"]}' free
+expect_configured_default object-missing-provider '{"model":{"model":"grok-4.7"}}' free
+expect_configured_default object-missing-model '{"model":{"providerID":"cliproxy"}}' free
+expect_configured_default empty-string-model '{"model":""}' free
+expect_configured_default not-an-object '["cliproxy/grok-4.7"]' free
+# A paid configured default never makes another harness a free OpenCode model.
+OC_PAID_CONFIG=$(oc_config_case paid-other-harness '{"model":"cliproxy/grok-4.7"}')
+XDG_CONFIG_HOME="$OC_PAID_CONFIG" "$SENS" free-model --harness grok --model '' &&
+  fail "a Grok launch was treated as a free OpenCode model"
+pass "OpenCode's own configured default decides a model-less launch, and an unresolved one keeps the confine"
 
 # mech is the worker handoff. A paid id or a sensitive path never launches.
 # A free id launches under the same scrub and read block, prints a diff, and
