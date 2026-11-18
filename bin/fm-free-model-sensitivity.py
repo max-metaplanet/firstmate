@@ -351,11 +351,12 @@ def opencode_configured_model(launch_dir: str | None = None) -> str | None:
     `OPENCODE_CONFIG_CONTENT`, or `OPENCODE_CONFIG_DIR` set at all, an
     `opencode.json` or `opencode.jsonc` in a managed config dir
     (`/Library/Application Support/opencode` or `/etc/opencode`), a global
-    `opencode.jsonc` or agent file under `agent/` or `agents/`, a global
-    `default_agent` key or `agent` entry carrying a `model`, or a project
-    `opencode.json` or `opencode.jsonc`, `.opencode/opencode.json` or
-    `.opencode/opencode.jsonc`, or agent file under `.opencode/agent/` or
-    `.opencode/agents/` in the launch directory or an ancestor up to the
+    `opencode.jsonc` or override file under `agent/`, `agents/`, `mode/`, or
+    `modes/`, a global `default_agent` key or `agent`, `agents`, or `mode`
+    entry carrying a `model`, or a project `opencode.json` or
+    `opencode.jsonc`, `.opencode/opencode.json` or `.opencode/opencode.jsonc`,
+    or override file under those four `.opencode/` subdirectories in the
+    launch directory or an ancestor up to the
     repository root. A bare `.opencode` directory, such as the plugin
     directory firstmate writes, selects no model and is not a layer. It
     also covers an id holding an unexpanded `{env:` or `{file:` placeholder, and every read
@@ -366,7 +367,7 @@ def opencode_configured_model(launch_dir: str | None = None) -> str | None:
     """
 
     def agent_file(base: str) -> bool:
-        for sub in ("agent", "agents"):
+        for sub in ("agent", "agents", "mode", "modes"):
             for _, _, files in os.walk(os.path.join(base, sub)):
                 if files:
                     return True
@@ -420,7 +421,7 @@ def opencode_configured_model(launch_dir: str | None = None) -> str | None:
         if (
             not isinstance(config, dict)
             or "default_agent" in config
-            or carries_model(config.get("agent"))
+            or any(carries_model(config.get(key)) for key in ("agent", "agents", "mode"))
         ):
             return None
         model = config.get("model")
