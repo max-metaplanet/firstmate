@@ -516,7 +516,7 @@ mech_run() {
   MECH_STATUS=0
   MECH_ERR=$TMP_ROOT/mech-err
   MECH_OUT=$(
-    cd "$MECH_REPO/${MECH_CWD:-}" && DOPPLER_TOKEN=secret AWS_REGION=us-east-1 HOME="$TREE/home" PATH="$MECH_BIN:$PATH" \
+    cd "$MECH_REPO/${MECH_CWD:-}" && DOPPLER_TOKEN=secret AWS_REGION=us-east-1 HOME="$TREE/home" XDG_CONFIG_HOME="$OC_EMPTY_CONFIG" PATH="$MECH_BIN:$PATH" \
       "$SENS" "$@" 2>"$MECH_ERR"
   ) || status=$?
   MECH_STATUS=$status
