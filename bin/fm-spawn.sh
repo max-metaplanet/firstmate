@@ -7517,7 +7517,7 @@ fi
 # paid OpenCode model, keeps the command and environment built above.
 if [ -n "$HARNESS" ]; then
   fm_free_rc=0
-  "$SCRIPT_DIR/fm-free-model-sensitivity.sh" free-model --harness "$HARNESS" --model "${MODEL:-}" || fm_free_rc=$?
+  "$SCRIPT_DIR/fm-free-model-sensitivity.sh" free-model --harness "$HARNESS" --model "${MODEL:-}" --dir "${WT:-$PWD}" || fm_free_rc=$?
   case "$fm_free_rc" in
     0)
       # Exit 0 means a declared target is sensitive. Start there so a

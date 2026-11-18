@@ -287,33 +287,103 @@ def free_model_id(model: str) -> bool:
     return leaf in ("free", "big-pickle") or leaf.endswith(("-free", ":free"))
 
 
-def opencode_configured_model() -> str | None:
-    """OpenCode's own default model id from the launching host, or None.
+def strip_jsonc(text: str) -> str:
+    """JSON text from JSONC: `//` and `/* */` comments and trailing commas go.
 
-    OpenCode reads `opencode.json` under `XDG_CONFIG_HOME`, falling back to
-    `~/.config`, and its top-level `model` key is either a plain id string or
-    an object of `providerID` and `model` that composes as `<providerID>/<model>`.
-    None means the id did not resolve, which covers every failure: the file is
-    missing, unreadable, or not valid JSON, the document is not an object, the
-    `model` key is absent or null, the object form is missing either part, or
-    the value is any other shape.
+    Both passes skip string contents, so a `//` or `,}` inside a string stays.
+    """
+
+    def scan(source: str, outside):
+        out = []
+        index = 0
+        in_string = False
+        while index < len(source):
+            char = source[index]
+            if in_string:
+                out.append(char)
+                if char == "\\" and index + 1 < len(source):
+                    out.append(source[index + 1])
+                    index += 1
+                elif char == '"':
+                    in_string = False
+                index += 1
+                continue
+            if char == '"':
+                in_string = True
+                out.append(char)
+                index += 1
+                continue
+            index = outside(source, index, out)
+        return "".join(out)
+
+    def comments(source: str, index: int, out: list) -> int:
+        if source.startswith("//", index):
+            end = source.find("\n", index)
+            return len(source) if end < 0 else end
+        if source.startswith("/*", index):
+            end = source.find("*/", index + 2)
+            return len(source) if end < 0 else end + 2
+        out.append(source[index])
+        return index + 1
+
+    def commas(source: str, index: int, out: list) -> int:
+        if source[index] == ",":
+            ahead = index + 1
+            while ahead < len(source) and source[ahead] in " \t\r\n":
+                ahead += 1
+            if ahead < len(source) and source[ahead] in "}]":
+                return index + 1
+        out.append(source[index])
+        return index + 1
+
+    return scan(scan(text, comments), commas)
+
+
+def opencode_configured_model(launch_dir: str | None = None) -> str | None:
+    """OpenCode's own default model id for a launch in `launch_dir`, or None.
+
+    Only one source counts as certain: the global `opencode.json` under
+    `XDG_CONFIG_HOME`, falling back to `~/.config`, read as JSONC, whose
+    top-level `model` key is a plain id string or an object of `providerID`
+    and `model` that composes as `<providerID>/<model>`.
+    None means the id did not resolve with certainty. That covers every layer
+    OpenCode could merge over that file: `OPENCODE_CONFIG` or
+    `OPENCODE_CONFIG_CONTENT` set at all, a global `opencode.jsonc`, or a
+    project `opencode.json`, `opencode.jsonc`, or `.opencode` in the launch
+    directory or an ancestor up to the repository root. It also covers an
+    id holding an unexpanded `{env:` or `{file:` placeholder, and every read
+    failure: a missing, unreadable, or unparsable file, a document that is not
+    an object, or a `model` that is absent, null, partial, or another shape.
     This runs on a guard path, so it never raises: over-confining is better
     than crashing the classification.
     """
     try:
+        if "OPENCODE_CONFIG" in os.environ or "OPENCODE_CONFIG_CONTENT" in os.environ:
+            return None
+        directory = os.path.realpath(launch_dir or os.getcwd())
+        while True:
+            for name in ("opencode.json", "opencode.jsonc", ".opencode"):
+                if os.path.lexists(os.path.join(directory, name)):
+                    return None
+            parent = os.path.dirname(directory)
+            if os.path.lexists(os.path.join(directory, ".git")) or parent == directory:
+                break
+            directory = parent
         config_home = os.environ.get("XDG_CONFIG_HOME") or os.path.join(
             os.path.expanduser("~"), ".config"
         )
-        with open(
-            os.path.join(config_home, "opencode", "opencode.json"), encoding="utf-8"
-        ) as handle:
-            config = json.load(handle)
+        config_dir = os.path.join(config_home, "opencode")
+        if os.path.lexists(os.path.join(config_dir, "opencode.jsonc")):
+            return None
+        with open(os.path.join(config_dir, "opencode.json"), encoding="utf-8") as handle:
+            config = json.loads(strip_jsonc(handle.read()))
         if not isinstance(config, dict):
             return None
         model = config.get("model")
+        resolved = None
         if isinstance(model, str) and model.strip():
-            return model.strip()
-        if isinstance(model, dict):
+            resolved = model.strip()
+        elif isinstance(model, dict):
             provider = model.get("providerID")
             name = model.get("model")
             if (
@@ -322,27 +392,31 @@ def opencode_configured_model() -> str | None:
                 and provider.strip()
                 and name.strip()
             ):
-                return f"{provider.strip()}/{name.strip()}"
-        return None
+                resolved = f"{provider.strip()}/{name.strip()}"
+        if resolved is None or "{env:" in resolved or "{file:" in resolved:
+            return None
+        return resolved
     except Exception:
         return None
 
 
-def is_free_opencode(harness: str | None, model: str | None) -> bool:
+def is_free_opencode(harness: str | None, model: str | None, launch_dir: str | None = None) -> bool:
     """A free OpenCode model is an opencode launch on a documented free model.
 
     An explicit id is free when `free_model_id` says so.
     A launch that names no model or `default` leaves the choice to OpenCode,
-    so the id OpenCode itself is configured to use decides: a paid configured
-    default is paid and takes no confine, and a free one stays free.
-    When that configured default does not resolve the launch stays free, since
-    an unknown default may be free and the confine is the safe side.
+    so the id OpenCode itself is configured to use for a launch in
+    `launch_dir` (the current directory when unset) decides: a paid
+    configured default is paid and takes no confine, and a free one stays free.
+    When that configured default does not resolve with certainty the launch
+    stays free, since an unknown default may be free and the confine is the
+    safe side.
     Another harness stays paid even when its id ends in `-free`.
     """
     if harness != "opencode":
         return False
     if not model or model == "default":
-        configured = opencode_configured_model()
+        configured = opencode_configured_model(launch_dir)
         return True if configured is None else free_model_id(configured)
     return free_model_id(model)
 
@@ -1430,8 +1504,12 @@ def path_refused(path: str, home: str) -> str | None:
 def mech_refusal(model: str | None, paths: list[str], prompt: str, home: str) -> str | None:
     """Why this handoff must not launch, or None when it may."""
     if not is_free_opencode("opencode", model):
-        shown = model if model else ""
-        return f"refusing '{shown}' because it is not a documented free OpenCode model"
+        if model and model != "default":
+            shown = f"'{model}'"
+        else:
+            configured = opencode_configured_model()
+            shown = f"OpenCode's configured default '{configured}'" if configured else "OpenCode's default model"
+        return f"refusing {shown} because it is not a documented free OpenCode model"
     if not prompt.strip():
         return "mech needs the edit after --"
     if not paths:
@@ -1605,7 +1683,7 @@ def mech(argv: list[str]) -> int:
 def usage() -> None:
     print(
         "usage: fm-free-model-sensitivity.sh class <path>\n"
-        "       fm-free-model-sensitivity.sh free-model --harness <h> --model <id>\n"
+        "       fm-free-model-sensitivity.sh free-model --harness <h> --model <id> [--dir <launch dir>]\n"
         "       fm-free-model-sensitivity.sh token-name <NAME>\n"
         "       fm-free-model-sensitivity.sh brief-sensitive --brief <file>\n"
         "       fm-free-model-sensitivity.sh apply-resolution --brief <file>\n"
@@ -1659,7 +1737,11 @@ def main(argv: list[str]) -> int:
         except SystemExit:
             usage()
             return 2
-        return 0 if is_free_opencode(harness, model) else 1
+        try:
+            launch_dir = flag_value(argv[2:], "--dir")
+        except SystemExit:
+            launch_dir = None
+        return 0 if is_free_opencode(harness, model, launch_dir) else 1
     if cmd == "token-name":
         if len(argv) != 3:
             usage()

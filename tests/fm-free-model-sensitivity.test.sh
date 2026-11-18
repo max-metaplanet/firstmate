@@ -412,18 +412,33 @@ oc_config_case() {
   printf '%s' "$dir"
 }
 
-expect_configured_default() {
-  local name=$1 body=$2 want=$3 dir model
-  dir=$(oc_config_case "$name" "$body")
+# Every case launches from a private git project with no OpenCode files and
+# with OPENCODE_CONFIG and OPENCODE_CONFIG_CONTENT unset, so the global config
+# is the only layer unless a case adds one.
+oc_project() {
+  local dir="$TMP_ROOT/opencode-project-$1"
+  mkdir -p "$dir/.git" "$dir/app/src"
+  printf '%s' "$dir"
+}
+
+oc_classify() {
+  local want=$1 config=$2 dir=$3 label=$4 model got
+  shift 4
   for model in '' default; do
-    if XDG_CONFIG_HOME="$dir" "$SENS" free-model --harness opencode --model "$model"; then
-      [ "$want" = free ] ||
-        fail "configured default '$name' was treated as free for model '${model:-<empty>}'"
+    if env -u OPENCODE_CONFIG -u OPENCODE_CONFIG_CONTENT XDG_CONFIG_HOME="$config" "$@" \
+      "$SENS" free-model --harness opencode --model "$model" --dir "$dir"; then
+      got=free
     else
-      [ "$want" = paid ] ||
-        fail "configured default '$name' was treated as paid for model '${model:-<empty>}'"
+      got=paid
     fi
+    [ "$got" = "$want" ] || fail "$label was treated as $got for model '${model:-<empty>}'"
   done
+}
+
+OC_PROJECT=$(oc_project plain)
+expect_configured_default() {
+  local name=$1 body=$2 want=$3
+  oc_classify "$want" "$(oc_config_case "$name" "$body")" "$OC_PROJECT" "configured default '$name'"
 }
 
 # A paid id, as a plain string and in the {providerID,model} object form.
@@ -449,11 +464,55 @@ expect_configured_default object-missing-provider '{"model":{"model":"grok-4.7"}
 expect_configured_default object-missing-model '{"model":{"providerID":"cliproxy"}}' free
 expect_configured_default empty-string-model '{"model":""}' free
 expect_configured_default not-an-object '["cliproxy/grok-4.7"]' free
+# OpenCode accepts JSONC in opencode.json: comments and trailing commas still
+# resolve the paid id, and comment-like text inside a string is not stripped.
+expect_configured_default paid-jsonc $'{\n  // CLIProxy tunnel\n  /* paid */ "model": "cliproxy/grok-4.7",\n}' paid
+expect_configured_default paid-jsonc-string-text \
+  '{"note":"http://host /* x */ ,}","model":"cliproxy/grok-4.7",}' paid
+# An unexpanded placeholder is not a model id.
+expect_configured_default env-placeholder '{"model":"{env:OPENCODE_MODEL}"}' free
+expect_configured_default file-placeholder \
+  '{"model":{"providerID":"cliproxy","model":"{file:./model.txt}"}}' free
 # A paid configured default never makes another harness a free OpenCode model.
 OC_PAID_CONFIG=$(oc_config_case paid-other-harness '{"model":"cliproxy/grok-4.7"}')
 XDG_CONFIG_HOME="$OC_PAID_CONFIG" "$SENS" free-model --harness grok --model '' &&
   fail "a Grok launch was treated as a free OpenCode model"
 pass "OpenCode's own configured default decides a model-less launch, and an unresolved one keeps the confine"
+
+# Any layer OpenCode may merge over the global opencode.json makes the default
+# uncertain, so the launch stays free and keeps the confine. The security case
+# is a FREE project model beside a PAID global one: reading only the global
+# file would call it paid and run a free model unconfined.
+OC_PAID=$(oc_config_case layered-paid '{"model":"cliproxy/grok-4.7"}')
+oc_classify paid "$OC_PAID" "$OC_PROJECT" "a paid global default with no other layer"
+dir=$(oc_project free-beside-paid)
+printf '%s' '{"model":"opencode/big-pickle"}' > "$dir/opencode.json"
+oc_classify free "$OC_PAID" "$dir" "a free project model beside a paid global one"
+dir=$(oc_project jsonc)
+printf '%s' '{"model":"cliproxy/grok-4.7"}' > "$dir/opencode.jsonc"
+oc_classify free "$OC_PAID" "$dir" "a project opencode.jsonc"
+dir=$(oc_project dot-opencode)
+mkdir -p "$dir/.opencode"
+oc_classify free "$OC_PAID" "$dir" "a project .opencode directory"
+dir=$(oc_project ancestor)
+printf '%s' '{"model":"opencode/big-pickle"}' > "$dir/opencode.json"
+oc_classify free "$OC_PAID" "$dir/app/src" "a project config in the repository root above the launch directory"
+dir=$(oc_project middle)
+printf '%s' '{"model":"opencode/big-pickle"}' > "$dir/app/opencode.json"
+oc_classify free "$OC_PAID" "$dir/app/src" "a project config in an ancestor below the repository root"
+dir=$(oc_project outside-root)
+printf '%s' '{"model":"opencode/big-pickle"}' > "$dir/opencode.json"
+mkdir -p "$dir/repo/.git"
+oc_classify paid "$OC_PAID" "$dir/repo" "a config above the repository root, which OpenCode does not read"
+OC_BOTH=$(oc_config_case global-jsonc-beside '{"model":"cliproxy/grok-4.7"}')
+printf '%s' '{"model":"opencode/big-pickle"}' > "$OC_BOTH/opencode/opencode.jsonc"
+oc_classify free "$OC_BOTH" "$OC_PROJECT" "a global opencode.jsonc beside opencode.json"
+OC_JSONC_ONLY=$(oc_config_case global-jsonc-only __missing__)
+printf '%s' '{"model":"cliproxy/grok-4.7"}' > "$OC_JSONC_ONLY/opencode/opencode.jsonc"
+oc_classify free "$OC_JSONC_ONLY" "$OC_PROJECT" "a global opencode.jsonc instead of opencode.json"
+oc_classify free "$OC_PAID" "$OC_PROJECT" "OPENCODE_CONFIG set" OPENCODE_CONFIG="$TMP_ROOT/no-such-opencode.json"
+oc_classify free "$OC_PAID" "$OC_PROJECT" "OPENCODE_CONFIG_CONTENT set empty" OPENCODE_CONFIG_CONTENT=
+pass "any OpenCode config layer over the global file, including a free project model beside a paid global one, keeps the confine"
 
 # mech is the worker handoff. A paid id or a sensitive path never launches.
 # A free id launches under the same scrub and read block, prints a diff, and
@@ -516,8 +575,8 @@ mech_run() {
   MECH_STATUS=0
   MECH_ERR=$TMP_ROOT/mech-err
   MECH_OUT=$(
-    cd "$MECH_REPO/${MECH_CWD:-}" && DOPPLER_TOKEN=secret AWS_REGION=us-east-1 HOME="$TREE/home" XDG_CONFIG_HOME="$OC_EMPTY_CONFIG" PATH="$MECH_BIN:$PATH" \
-      "$SENS" "$@" 2>"$MECH_ERR"
+    cd "$MECH_REPO/${MECH_CWD:-}" && DOPPLER_TOKEN=secret AWS_REGION=us-east-1 HOME="$TREE/home" XDG_CONFIG_HOME="${MECH_XDG:-$OC_EMPTY_CONFIG}" PATH="$MECH_BIN:$PATH" \
+      env -u OPENCODE_CONFIG -u OPENCODE_CONFIG_CONTENT "$SENS" "$@" 2>"$MECH_ERR"
   ) || status=$?
   MECH_STATUS=$status
 }
@@ -556,6 +615,16 @@ mech_run mech --model opencode/big-pickle --path .secrets/token -- "rename the c
 mech_run mech --model opencode/glm-5.3-flash-free -- "rename the counter"
 [ "$MECH_STATUS" -eq 2 ] || fail "mech without a path should be a usage error, got $MECH_STATUS"
 pass "mech refuses a sensitive path, a paid OpenCode model, and a Claude id without launching"
+
+# A model-less mech handoff on a paid configured default is refused, and the
+# refusal names that default rather than an empty id.
+rm -f "$MECH_LOG"
+MECH_XDG=$OC_PAID mech_run mech --path src/app.ts -- "rename the counter"
+[ "$MECH_STATUS" -eq 1 ] || fail "mech launched on a paid configured default: status=$MECH_STATUS"
+[ ! -e "$MECH_LOG" ] || fail "mech launched on a paid configured default"
+assert_contains "$(cat "$MECH_ERR")" "OpenCode's configured default 'cliproxy/grok-4.7'" "the refusal did not name the configured default"
+assert_not_contains "$(cat "$MECH_ERR")" "''" "the refusal named an empty model"
+pass "mech refuses a paid configured default and names it"
 
 printf 'DIRTY-MARKER\n' >> "$MECH_REPO/README.md"
 git -C "$MECH_REPO" add README.md
