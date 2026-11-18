@@ -29,6 +29,8 @@
 # worker_resume records the semantic PR observation last delivered to the park
 # queue. It advances only after a durable request succeeds; lock deferrals retry
 # from the saved observation, including terminal rows after forge polling ends.
+# Its mergeability keeps the last definite forge reading, because GitHub reports
+# "unknown" while it recomputes and that reading carries no information.
 # observation is one coherent forge read (a PR head is rechecked after fetching
 # checks/reviews). Checks are normalized by name, id, started_at, status and
 # conclusion; projection picks the newest attempt per distinct name. The last
@@ -471,35 +473,38 @@ observe() { # canonical GitHub URL -> normalized JSON
 }
 
 worker_observation() { # task row-file
-  local task=$1 row=$2 actor reason failing signal previous event_token rc=0
+  local task=$1 row=$2 actor reason failing signal previous changed event_token rc=0
   [ -f "$STATE/$task.meta" ] || return 0
   if jq -e '.kind == "pr" and .error == null and .observation != null' "$row" >/dev/null; then
-    signal=$(jq_lib -nc --slurpfile row "$row" '$row[0] | worker_signal') || return 1
     previous=$(jq -c '.worker_resume // null' "$row") || return 1
+    signal=$(jq_lib -nc --slurpfile row "$row" --argjson previous "$previous" '$row[0] | worker_signal($previous)') || return 1
     if [ "$signal" != "$previous" ]; then
-      reason=$(jq -nr --argjson old "$previous" --argjson new "$signal" '
-        if $new.state == "merged" or $new.state == "closed" then "forge reports " + $new.state
-        elif ($old != null and ($old.reviews != $new.reviews or $old.events != $new.events or $old.review_decision != $new.review_decision))
-          or ($old == null and (($new.reviews | length) > 0 or ($new.events | length) > 0 or $new.review_decision == "CHANGES_REQUESTED")) then "new upstream review or comment"
-        elif $new.mergeable == "conflicting" and $old.mergeable != $new.mergeable then "PR has conflicts"
-        else "PR checks or head changed" end') || return 1
-      failing=''
-      if [ "$reason" = 'PR checks or head changed' ]; then
-        failing=$(jq_lib -nr --slurpfile row "$row" '
-          if ($row[0].observation.checks | completed_checks | failed_of(.) | length) > 0
-          then failing_identities($row[0]) else "" end') || return 1
-        [ -z "$failing" ] || reason='checks failed'
-      fi
-      event_token=$(jq -r 'if .observation.state == "closed" or .observation.state == "merged"
-        then .url + "|" + .observation.state else "" end' "$row") || return 1
-      case "$reason/$(sed -n 's/^phase=//p' "$STATE/$task.park" 2>/dev/null | tail -n 1)" in
-        'PR checks or head changed'/parked|'PR checks or head changed'/parking|'PR checks or head changed'/queued) ;;
-        'PR checks or head changed'/*) rc=-1 ;;
-      esac
-      if [ "$rc" -eq 0 ]; then
-        "$SCRIPT_DIR/fm-worker-park.sh" request "$task" "$reason" "$failing" "$event_token" >/dev/null || rc=$?
-        [ "$rc" -ne 75 ] || return 0
-        [ "$rc" -eq 0 ] || return 1
+      changed=$(jq_lib -nr --argjson old "$previous" --argjson new "$signal" 'worker_resume_changed($old; $new)') || return 1
+      if [ "$changed" = true ]; then
+        reason=$(jq -nr --argjson old "$previous" --argjson new "$signal" '
+          if $new.state == "merged" or $new.state == "closed" then "forge reports " + $new.state
+          elif ($old != null and ($old.reviews != $new.reviews or $old.events != $new.events or $old.review_decision != $new.review_decision))
+            or ($old == null and (($new.reviews | length) > 0 or ($new.events | length) > 0 or $new.review_decision == "CHANGES_REQUESTED")) then "new upstream review or comment"
+          elif $new.mergeable == "conflicting" and $old.mergeable != $new.mergeable then "PR has conflicts"
+          else "PR checks or head changed" end') || return 1
+        failing=''
+        if [ "$reason" = 'PR checks or head changed' ]; then
+          failing=$(jq_lib -nr --slurpfile row "$row" '
+            if ($row[0].observation.checks | completed_checks | failed_of(.) | length) > 0
+            then failing_identities($row[0]) else "" end') || return 1
+          [ -z "$failing" ] || reason='checks failed'
+        fi
+        event_token=$(jq -r 'if .observation.state == "closed" or .observation.state == "merged"
+          then .url + "|" + .observation.state else "" end' "$row") || return 1
+        case "$reason/$(sed -n 's/^phase=//p' "$STATE/$task.park" 2>/dev/null | tail -n 1)" in
+          'PR checks or head changed'/parked|'PR checks or head changed'/parking|'PR checks or head changed'/queued) ;;
+          'PR checks or head changed'/*) rc=-1 ;;
+        esac
+        if [ "$rc" -eq 0 ]; then
+          "$SCRIPT_DIR/fm-worker-park.sh" request "$task" "$reason" "$failing" "$event_token" >/dev/null || rc=$?
+          [ "$rc" -ne 75 ] || return 0
+          [ "$rc" -eq 0 ] || return 1
+        fi
       fi
       jq --argjson signal "$signal" '.worker_resume=$signal' "$row" > "$TMP/worker-resume.json" || return 1
       mv "$TMP/worker-resume.json" "$row"

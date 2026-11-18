@@ -58,11 +58,25 @@ def failing_identities($record):
 # Semantic return events carry only each lane's newest completed verdict, so
 # attempt ids, timestamps, pending lanes and rerun starts never spend a worker
 # slot, and an identical red set on the same head does not spend another.
-def worker_signal:
+# GitHub reports mergeability as "unknown" while it recomputes, so an unknown
+# reading is absence of information rather than a value: it must neither erase
+# the last definite reading nor spend a parked worker's slot by itself.
+def definite_mergeable($value):
+  $value != null and $value != "" and $value != "unknown";
+def worker_signal($previous):
   .observation as $o
-  | {head:$o.head,state:$o.state,mergeable:$o.mergeable,review_decision:$o.review_decision,
+  | {head:$o.head,state:$o.state,
+     mergeable:(if definite_mergeable($o.mergeable) then $o.mergeable else $previous.mergeable end),
+     review_decision:$o.review_decision,
      reviews:($o.reviews | sort_by(.id)),events:([$o.events[].token] | sort),
      checks:($o.checks | completed_checks | map({name,conclusion}) | sort_by(.name))};
+# A difference that only reflects an unknown mergeability reading is no change
+# at all; two different definite readings still are.
+def worker_resume_changed($previous; $signal):
+  $previous == null
+  or ($previous | del(.mergeable)) != ($signal | del(.mergeable))
+  or (definite_mergeable($previous.mergeable) and definite_mergeable($signal.mergeable)
+      and $previous.mergeable != $signal.mergeable);
 def projected($input; $saved; $now; $max_age):
   known($input; $saved) as $known
   | [$known[] as $k
